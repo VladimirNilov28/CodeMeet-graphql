@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+:root { font-family: "Courier New", monospace; background-color: #0a0a0a; color: #00ffcc; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%); }
+.cyber-panel { background-color: rgba(10, 10, 10, 0.8); border: 1px solid #00ffcc; box-shadow: 0 0 10px rgba(0, 255, 204, 0.2), inset 0 0 10px rgba(0, 255, 204, 0.1); }
+.cyber-button { background: transparent; color: #ff00ff; border: 1px solid #ff00ff; text-transform: uppercase; transition: all 0.2s ease; }
+.cyber-button:hover { background: rgba(255, 0, 255, 0.1); box-shadow: 0 0 15px rgba(255, 0, 255, 0.5); text-shadow: 0 0 5px #ff00ff; }
+.cyber-input { background: #0f0f1a; border: 1px solid #3366ff; color: #00ffcc; transition: border-color 0.2s; padding: 0.5rem; width: 100%; }
+.cyber-input:focus { outline: none; border-color: #00ffcc; box-shadow: 0 0 8px rgba(0, 255, 204, 0.4); }
