@@ -34,6 +34,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // We want stateless sessions since we're using JWTs
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/register", "/api/auth/login", "/error", "/uploads/**", "/ws/**").permitAll() // Allow unauthenticated access to auth, uploads, and websocket handshake endpoints
+                .requestMatchers("/", "/index.html", "/assets/**", "/*.js", "/*.css", "/*.ico", "/*.png", "/*.svg").permitAll() // Allow static frontend files
                 .anyRequest().authenticated() // Require authentication for all other endpoints
             )
             // Telling Spring to check our JWT filter BEFORE the standard username/password authentication filter, so that we can set the security context based on the JWT
