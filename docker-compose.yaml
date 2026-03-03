@@ -10,13 +10,20 @@ services:
       POSTGRES_DB: "matchme"
     volumes:
       - db_data:/var/lib/postgresql/data/
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   app:
     build: .
     ports:
       - "8080:8080"
     depends_on:
-      - database
+      database:
+        condition: service_healthy
+    restart: on-failure
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://database:5432/matchme
       SPRING_DATASOURCE_USERNAME: postgres
