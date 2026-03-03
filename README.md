@@ -4,7 +4,7 @@ A full-stack recommendation application designed to connect developers, programm
 
 ## Project Overview
 
-CodeMeet is a Match-Me application tailored for coders. It provides:
+CodeMeet is an application tailored for coders. It provides:
 - Secure User Authentication (JWT and bcrypt)
 - Profile & Bio creation to highlight tech stack and interests
 - An intelligent recommendation algorithm
@@ -19,9 +19,11 @@ We have implemented the following features:
 - **Core Entities**: Endpoints for creating and updating Bios and Profiles.
 - **Matching & Connections**: A backend recommendation engine logic with scoring, and a complete connections system (accepting/dismissing).
 - **Frontend Foundations**: React + Vite frontend scaffolding with Tailwind CSS integration.
-- **UI Screens**: Authentication flows (Login/Register) and the fully functional Onboarding Flow (`SetupBio`) to configure multi-select profile variables.
+- **UI Screens**: Authentication flows (Login/Register), Onboarding (`SetupBio`), Dashboard, Matching View, Connections list, and Active Chat.
+- **Real-time Features**: Implemented full STOMP WebSocket chat with typing indicators and online presence tracking.
+- **Privacy**: Strict profile visibility rules (404 for unconnected users) and email obfuscation.
 
-Next phases involve adding image uploads, real-time chat, rendering the Match View on the frontend, and building out the rest of the application user interfaces.
+All core features, including Chat, Matching, and Profile management are fully implemented. Next planned phase is Data Seeding for scale testing and GraphQL API implementation.
 
 ## Technology Stack & Dependencies
 
@@ -116,8 +118,13 @@ To run this project, you need to install the following software on your local ma
 Once both servers are running:
 1. Open the frontend URL (typically `http://localhost:5173`).
 2. Register for a new account.
-3. Complete your Bio and Profile.
-4. (Upcoming) Browse your developer matches on the recommendations page!
+3. Complete your Bio and Profile through the onboarding questionnaire.
+4. Browse developer matches on the **Matches** page and send connection requests.
+5. Manage requests in **Connections** page.
+6. Once connected, initiate a real-time chat from the connections list or chat interface!
 
 ## Additional Features
-- *To be documented once implemented (e.g. proximity-based recommendations, GraphQL API).*
+- **Real-time Chat**: Connects via WebSocket/STOMP.
+- **Online Presence**: Shows user status (online/offline) and last seen time.
+- **Typing Indicators**: Shows when a user is typing a message.
+- *Upcoming: GraphQL API for data querying.*
