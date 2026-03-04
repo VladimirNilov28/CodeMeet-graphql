@@ -36,6 +36,7 @@
     &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
     &quot;project.structure.proportion&quot;: &quot;0.15&quot;,
     &quot;project.structure.side.proportion&quot;: &quot;0.0&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;/snap/intellij-idea-ultimate/730/plugins/javascript-plugin/jsLanguageServicesImpl/external&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
@@ -71,7 +72,7 @@
       <option name="presentableId" value="Default" />
       <updated>1772572904560</updated>
       <workItem from="1772572905836" duration="2905000" />
-      <workItem from="1772656146394" duration="2015000" />
+      <workItem from="1772656146394" duration="7143000" />
     </task>
     <servers />
   </component>

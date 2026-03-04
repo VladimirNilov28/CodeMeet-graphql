@@ -1,108 +1,80 @@
 import uuid
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import subprocess
 import sys
 
-# --- Mock Data Pools ---
-FIRST_NAMES = ["Alex", "Jordan", "Taylor", "Casey", "Morgan", "Riley", "Jamie", "Chris", "Sam", "Drew", "Avery", "Parker", "Logan", "Hunter", "Blake"]
-LAST_NAMES = ["Smith", "Johnson", "Williams", "Jones", "Brown", "Davis", "Miller", "Wilson", "Moore", "Taylor", "Anderson", "Thomas", "Jackson", "White"]
-LANGUAGES = ["Java", "Python", "TypeScript", "Go", "Rust", "C#", "C++", "JavaScript", "Ruby", "Kotlin", "Swift"]
-EXPERIENCE = ["Junior", "Mid", "Senior", "Lead", "Principal"]
-LOOK_FOR = ["Mentor", "Mentee", "Coding Buddy", "Networking", "Startup Co-founder", "Code Review"]
-OS = ["Linux", "macOS", "Windows", "WSL"]
-CODING_STYLES = ["Night Owl", "Early Bird", "Weekend Warrior", "9-to-5", "Pomodoro Enthusiast"]
-CITIES = ["New York", "London", "Tokyo", "Berlin", "San Francisco", "Austin", "Toronto", "Stockholm", "Amsterdam", "Singapore"]
+# --- CONFIGURATION ---
+CONTAINER_NAME = "web-database-1"
+DB_NAME = "codemeet_db"
+DB_USER = "postgres"
 
-# A dummy bcrypt hash for the password "password123"
+# --- MOCK DATA POOLS ---
+LANGUAGES = ["Java", "Python", "TypeScript", "Go", "Rust", "C#", "C++", "JavaScript", "Kotlin"]
+EXPERIENCE = ["Junior", "Mid", "Senior", "Lead"]
+LOOK_FOR = ["Mentor", "Mentee", "Coding Buddy", "Networking"]
+OS = ["Linux", "macOS", "Windows"]
+CITIES = ["New York", "London", "Tokyo", "Berlin", "San Francisco", "Austin", "Toronto"]
+FIRST_NAMES = ["Alex", "Jordan", "Taylor", "Casey", "Morgan", "Riley", "Jamie", "Chris", "Sam", "Drew"]
+LAST_NAMES = ["Smith", "Johnson", "Williams", "Jones", "Brown", "Davis", "Miller", "Wilson"]
+
 DUMMY_PASSWORD_HASH = "$2a$10$vI8aWBnW3fID.021/sOWcow1Jv/C3Q/WvS22XW.Xw/8G6P4Xm.O2y"
 
 def generate_sql(num_users=100):
-    users_sql = []
-    profiles_sql = []
-    bios_sql = []
+    users_sql, profiles_sql, bios_sql = [], [], []
 
-    print(f"⚙️ Generating data for {num_users} developers...")
+    for i in range(num_users):
+        u_id = str(uuid.uuid4())
+        f_name = random.choice(FIRST_NAMES)
+        l_name = random.choice(LAST_NAMES)
 
-    for _ in range(num_users):
-        # 1. Generate User Data
-        user_id = str(uuid.uuid4())
-        first_name = random.choice(FIRST_NAMES)
-        last_name = random.choice(LAST_NAMES)
-        name = f"{first_name} {last_name}"
-        email = f"{first_name.lower()}.{last_name.lower()}{random.randint(10, 9999)}@example.com"
+        # Ensure uniqueness for constraints
+        suffix = f"{i:03d}{random.randint(10, 99)}"
+        email = f"{f_name.lower()}.{l_name.lower()}{suffix}@example.com"
+        name = f"{f_name} {l_name} {suffix}"
+        last_seen = (datetime.now(timezone.utc) - timedelta(days=random.randint(0, 5))).strftime('%Y-%m-%d %H:%M:%S%z')
 
-        # Random time within the last 30 days
-        days_ago = random.randint(0, 30)
-        last_seen = (datetime.utcnow() - timedelta(days=days_ago, hours=random.randint(0, 23))).strftime('%Y-%m-%d %H:%M:%S')
-        avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={user_id}"
+        # 1. users table
+        users_sql.append(f"('{u_id}', '{email}', '{last_seen}', '{name}', '{DUMMY_PASSWORD_HASH}', NULL)")
 
-        users_sql.append(
-            f"('{user_id}', '{email}', '{DUMMY_PASSWORD_HASH}', '{name}', '{avatar}', '{last_seen}')"
-        )
+        # 2. profiles table
+        p_id = str(uuid.uuid4())
+        about = f"Hi! I'm {f_name}, a dev from {random.choice(CITIES)}.".replace("'", "''")
+        profiles_sql.append(f"('{p_id}', '{about}', {random.choice(['true', 'false'])}, '{u_id}')")
 
-        # 2. Generate Profile Data
-        profile_id = str(uuid.uuid4())
-        is_online = random.choice(['true', 'false'])
-        about_me = f"Hi, I am {first_name}. I love coding and drinking coffee. Currently learning new things."
-
-        profiles_sql.append(
-            f"('{profile_id}', '{user_id}', '{about_me}', {is_online})"
-        )
-
-        # 3. Generate Bio Data
-        bio_id = str(uuid.uuid4())
-        lang = random.choice(LANGUAGES)
-        exp = random.choice(EXPERIENCE)
-        look = random.choice(LOOK_FOR)
-        os_pref = random.choice(OS)
-        style = random.choice(CODING_STYLES)
-        city = random.choice(CITIES)
-
+        # 3. bios table
+        b_id = str(uuid.uuid4())
         bios_sql.append(
-            f"('{bio_id}', '{user_id}', '{lang}', '{exp}', '{look}', '{os_pref}', '{style}', '{city}')"
+            f"('{b_id}', '{random.choice(CITIES)}', 'Night Owl', '{random.choice(EXPERIENCE)}', "
+            f"'{random.choice(LOOK_FOR)}', '{random.choice(OS)}', '{random.choice(LANGUAGES)}', '{u_id}')"
         )
 
-    # Wrap everything in a transaction for blazing fast insertion
-    sql_script = "BEGIN;\n\n"
+    sql = "BEGIN;\n"
+    sql += "INSERT INTO users (id, email, last_seen_at, name, password, profile_picture) VALUES " + ",\n".join(users_sql) + ";\n"
+    sql += "INSERT INTO profiles (id, about_me, is_online, user_id) VALUES " + ",\n".join(profiles_sql) + ";\n"
+    sql += "INSERT INTO bios (id, city, coding_style, experience_level, look_for, preferred_os, primary_language, user_id) VALUES " + ",\n".join(bios_sql) + ";\n"
+    sql += "COMMIT;"
+    return sql
 
-    sql_script += "INSERT INTO users (id, email, password, name, profile_picture, last_seen_at) VALUES\n"
-    sql_script += ",\n".join(users_sql) + ";\n\n"
+def seed():
+    print(f"🚀 Starting seed process for {DB_NAME}...")
+    sql_content = generate_sql(100)
 
-    sql_script += "INSERT INTO profiles (id, user_id, about_me, is_online) VALUES\n"
-    sql_script += ",\n".join(profiles_sql) + ";\n\n"
-
-    sql_script += "INSERT INTO bios (id, user_id, primary_language, experience_level, look_for, preferred_os, coding_style, city) VALUES\n"
-    sql_script += ",\n".join(bios_sql) + ";\n\n"
-
-    sql_script += "COMMIT;\n"
-
-    return sql_script
-
-def seed_database():
-    sql = generate_sql(100)
-
-    # Using the same container and DB names as your previous scripts
     command = [
-        "docker", "exec", "-i", "web-database-1",
-        "psql", "-U", "postgres", "-d", "matchme"
+        "docker", "exec", "-i", CONTAINER_NAME,
+        "psql", "-v", "ON_ERROR_STOP=1", "-U", DB_USER, "-d", DB_NAME
     ]
 
     try:
-        print("⏳ Seeding the database in Docker...")
-        subprocess.run(
-            command,
-            input=sql.encode('utf-8'),
-            check=True,
-            capture_output=True
-        )
-        print("✅ Success! The database is now populated with 100 users, profiles, and bios.")
-        print("🔑 Note: Everyone's password is 'password123'")
-    except subprocess.CalledProcessError as e:
-        print("❌ Error executing command.")
-        if e.stderr:
-            print(f"Details: {e.stderr.decode('utf-8').strip()}")
-        sys.exit(1)
+        process = subprocess.run(command, input=sql_content.encode('utf-8'), capture_output=True)
+
+        if process.returncode != 0:
+            print(f"❌ Error details:\n{process.stderr.decode('utf-8').strip()}")
+        else:
+            print(f"✅ Successfully seeded 100 users into '{DB_NAME}'.")
+
+    except Exception as e:
+        print(f"❌ Runtime Error: {e}")
 
 if __name__ == "__main__":
-    seed_database()
+    seed()
