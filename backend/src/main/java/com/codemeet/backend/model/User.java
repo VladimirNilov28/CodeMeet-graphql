@@ -30,4 +30,12 @@ public class User {
     private String profilePicture;
 
     private Instant lastSeenAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role = Role.USER;
+
+    public enum Role {
+        USER, ADMIN
+    }
 }
