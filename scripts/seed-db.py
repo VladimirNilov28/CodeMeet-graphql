@@ -18,7 +18,8 @@ CITIES = ["New York", "London", "Tokyo", "Berlin", "San Francisco", "Austin", "T
 FIRST_NAMES = ["Alex", "Jordan", "Taylor", "Casey", "Morgan", "Riley", "Jamie", "Chris", "Sam", "Drew"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Jones", "Brown", "Davis", "Miller", "Wilson"]
 
-DUMMY_PASSWORD_HASH = "$2a$10$vI8aWBnW3fID.021/sOWcow1Jv/C3Q/WvS22XW.Xw/8G6P4Xm.O2y"
+# pswd: dummy
+DUMMY_PASSWORD_HASH = "$2a$12$eIVKvWz5NO3FkU8ZcUfVaeyQzWrDpKBhRX./KLUCqwKrBfB9Izdke"
 DEFAULT_ROLE = "USER"  # <-- default role for all seeded users
 
 def generate_sql(num_users=100):

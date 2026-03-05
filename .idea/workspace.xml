@@ -4,19 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ebd9cf57-ebf5-43b0-b4ff-e3e2c9b51933" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/scripts/init-admin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/config/JwtAuthenticationFilter.java" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/config/JwtAuthenticationFilter.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/config/SecurityConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/config/SecurityConfig.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/controller/AuthController.java" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/controller/AuthController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/controller/UserController.java" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/controller/UserController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/model/User.java" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/model/User.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/service/JwtService.java" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/service/JwtService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/seed-db.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/seed-db.py" afterDir="false" />
-    </list>
+    <list default="true" id="ebd9cf57-ebf5-43b0-b4ff-e3e2c9b51933" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -41,7 +29,7 @@
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "git-widget-placeholder": "database/scripts",
+    "git-widget-placeholder": "feature/admin-role-impl",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "/home/biba/web/scripts",
     "node.js.detected.package.eslint": "true",
@@ -93,7 +81,7 @@
       <workItem from="1772572905836" duration="2905000" />
       <workItem from="1772656146394" duration="9651000" />
       <workItem from="1772737072781" duration="430000" />
-      <workItem from="1772747929654" duration="5797000" />
+      <workItem from="1772747929654" duration="6143000" />
     </task>
     <servers />
   </component>
