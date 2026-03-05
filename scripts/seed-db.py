@@ -18,7 +18,9 @@ CITIES = ["New York", "London", "Tokyo", "Berlin", "San Francisco", "Austin", "T
 FIRST_NAMES = ["Alex", "Jordan", "Taylor", "Casey", "Morgan", "Riley", "Jamie", "Chris", "Sam", "Drew"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Jones", "Brown", "Davis", "Miller", "Wilson"]
 
-DUMMY_PASSWORD_HASH = "$2a$10$vI8aWBnW3fID.021/sOWcow1Jv/C3Q/WvS22XW.Xw/8G6P4Xm.O2y"
+# pswd: dummy
+DUMMY_PASSWORD_HASH = "$2a$12$eIVKvWz5NO3FkU8ZcUfVaeyQzWrDpKBhRX./KLUCqwKrBfB9Izdke"
+DEFAULT_ROLE = "USER"  # <-- default role for all seeded users
 
 def generate_sql(num_users=100):
     users_sql, profiles_sql, bios_sql = [], [], []
@@ -34,8 +36,8 @@ def generate_sql(num_users=100):
         name = f"{f_name} {l_name} {suffix}"
         last_seen = (datetime.now(timezone.utc) - timedelta(days=random.randint(0, 5))).strftime('%Y-%m-%d %H:%M:%S%z')
 
-        # 1. users table
-        users_sql.append(f"('{u_id}', '{email}', '{last_seen}', '{name}', '{DUMMY_PASSWORD_HASH}', NULL)")
+        # 1. users table — added role column
+        users_sql.append(f"('{u_id}', '{email}', '{last_seen}', '{name}', '{DUMMY_PASSWORD_HASH}', NULL, '{DEFAULT_ROLE}')")
 
         # 2. profiles table
         p_id = str(uuid.uuid4())
@@ -50,7 +52,8 @@ def generate_sql(num_users=100):
         )
 
     sql = "BEGIN;\n"
-    sql += "INSERT INTO users (id, email, last_seen_at, name, password, profile_picture) VALUES " + ",\n".join(users_sql) + ";\n"
+    # Added 'role' to the column list
+    sql += "INSERT INTO users (id, email, last_seen_at, name, password, profile_picture, role) VALUES " + ",\n".join(users_sql) + ";\n"
     sql += "INSERT INTO profiles (id, about_me, is_online, user_id) VALUES " + ",\n".join(profiles_sql) + ";\n"
     sql += "INSERT INTO bios (id, city, coding_style, experience_level, look_for, preferred_os, primary_language, user_id) VALUES " + ",\n".join(bios_sql) + ";\n"
     sql += "COMMIT;"

@@ -209,6 +209,10 @@ public class UserController {
     }
 
     private boolean canViewProfile(User current, User target) {
+        if (current.getRole() == User.Role.ADMIN) {
+            return true;
+        }
+
         if (current.getId().equals(target.getId())) {
             return true;
         }

@@ -29,19 +29,24 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Enable CORS
-            .csrf(AbstractHttpConfigurer::disable) // Disable CSRF for simplicity, but consider enabling it in production
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // We want stateless sessions since we're using JWTs
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/register", "/api/auth/login").permitAll() // Public auth endpoints
-                .requestMatchers("/api/**").authenticated() // All other API endpoints require a valid JWT
-                .requestMatchers("/ws/**").permitAll() // WebSocket handshake
-                .requestMatchers("/uploads/**").permitAll() // Uploaded files
-                .requestMatchers("/error").permitAll()
-                .anyRequest().permitAll() // All other paths (frontend routes) served as static files / SPA fallback
-            )
-            // Telling Spring to check our JWT filter BEFORE the standard username/password authentication filter, so that we can set the security context based on the JWT
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+
+                        // ДОБАВЛЕНО: Эндпоинты, доступные только для ADMIN
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
+                        // Все остальные API эндпоинты требуют просто аутентификации (доступно и USER, и ADMIN)
+                        .requestMatchers("/api/**").authenticated()
+
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers("/uploads/**").permitAll()
+                        .requestMatchers("/error").permitAll()
+                        .anyRequest().permitAll()
+                )
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

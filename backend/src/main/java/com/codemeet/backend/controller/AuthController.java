@@ -54,14 +54,16 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<String> login(@RequestBody LoginRequest request) {
+        // 1. Проверяем, что вообще пришло от React
+        System.out.println(">>> [DEBUG] Login attempt! Identifier: " + request.getIdentifier());
+
         String identifier = request.getIdentifier() != null ? request.getIdentifier().trim() : "";
 
-        // Try email first, then username
+        // Поиск по email или имени
         Optional<User> userOptional = identifier.contains("@")
                 ? userRepository.findByEmail(identifier)
                 : userRepository.findByName(identifier);
 
-        // Fallback: if not found by name, try email (and vice versa)
         if (userOptional.isEmpty()) {
             userOptional = identifier.contains("@")
                     ? userRepository.findByName(identifier)
@@ -70,11 +72,24 @@ public class AuthController {
 
         if (userOptional.isPresent()) {
             User user = userOptional.get();
-            if (passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-                String token = jwtService.generateToken(user.getEmail(), user.getId().toString());
+            System.out.println(">>> [DEBUG] User found in DB: " + user.getEmail());
+
+            // 2. Сверяем пароли
+            boolean passwordMatch = passwordEncoder.matches(request.getPassword(), user.getPassword());
+            System.out.println(">>> [DEBUG] Password match result: " + passwordMatch);
+
+            if (passwordMatch) {
+                // Защита от NullPointerException, если у старых юзеров нет роли в БД
+                String roleName = user.getRole() != null ? user.getRole().name() : "USER";
+
+                String token = jwtService.generateToken(user.getEmail(), user.getId().toString(), roleName);
+                System.out.println(">>> [DEBUG] Token generated successfully!");
                 return ResponseEntity.ok(token);
             }
+        } else {
+            System.out.println(">>> [DEBUG] User NOT found in DB by identifier: " + identifier);
         }
+
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
     }
 }
