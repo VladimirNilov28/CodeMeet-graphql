@@ -32,7 +32,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         final String authHeader = request.getHeader("Authorization");
 
-        //If there is no token, just pass it along (SecurityConfig will block it if it's a protected route)
+        //  If there is no token, just pass it along (SecurityConfig will block it if it's a protected route)
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
