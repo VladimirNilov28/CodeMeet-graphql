@@ -107,6 +107,7 @@ const Matches: React.FC = () => {
                     <p className="text-zinc-500 mt-2 max-w-md mx-auto">
                         We've run out of matches for now. Try updating your bio to cast a wider net.
                     </p>
+                    <button onClick={fetchRecommendations} className="mt-4 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600">Refresh</button>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

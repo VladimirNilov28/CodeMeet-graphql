@@ -34,13 +34,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-
-                        // ДОБАВЛЕНО: Эндпоинты, доступные только для ADMIN
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-
-                        // Все остальные API эндпоинты требуют просто аутентификации (доступно и USER, и ADMIN)
                         .requestMatchers("/api/**").authenticated()
-
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/error").permitAll()
