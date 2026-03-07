@@ -14,7 +14,15 @@ LANGUAGES = ["Java", "Python", "TypeScript", "Go", "Rust", "C#", "C++", "JavaScr
 EXPERIENCE = ["Junior", "Mid", "Senior", "Lead"]
 LOOK_FOR = ["Mentor", "Mentee", "Coding Buddy", "Networking"]
 OS = ["Linux", "macOS", "Windows"]
-CITIES = ["New York", "London", "Tokyo", "Berlin", "San Francisco", "Austin", "Toronto"]
+GEO_POINTS = [
+    (40.7128, -74.0060),
+    (51.5072, -0.1276),
+    (35.6762, 139.6503),
+    (52.5200, 13.4050),
+    (37.7749, -122.4194),
+    (30.2672, -97.7431),
+    (43.6532, -79.3832),
+]
 FIRST_NAMES = ["Alex", "Jordan", "Taylor", "Casey", "Morgan", "Riley", "Jamie", "Chris", "Sam", "Drew"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Jones", "Brown", "Davis", "Miller", "Wilson"]
 
@@ -41,21 +49,26 @@ def generate_sql(num_users=100):
 
         # 2. profiles table
         p_id = str(uuid.uuid4())
-        about = f"Hi! I'm {f_name}, a dev from {random.choice(CITIES)}.".replace("'", "''")
-        profiles_sql.append(f"('{p_id}', '{about}', {random.choice(['true', 'false'])}, '{u_id}')")
+        about = f"Hi! I'm {f_name}, a developer who enjoys building projects and meeting new collaborators.".replace("'", "''")
+        profiles_sql.append(f"('{p_id}', '{about}', '{u_id}')")
 
         # 3. bios table
         b_id = str(uuid.uuid4())
+        age = random.randint(18, 60)
+        base_lat, base_lng = random.choice(GEO_POINTS)
+        latitude = round(base_lat + ((random.random() - 0.5) * 0.35), 6)
+        longitude = round(base_lng + ((random.random() - 0.5) * 0.35), 6)
+        max_distance_km = random.randint(10, 120)
         bios_sql.append(
-            f"('{b_id}', '{random.choice(CITIES)}', 'Night Owl', '{random.choice(EXPERIENCE)}', "
-            f"'{random.choice(LOOK_FOR)}', '{random.choice(OS)}', '{random.choice(LANGUAGES)}', '{u_id}')"
+            f"('{b_id}', 'Night Owl', '{random.choice(EXPERIENCE)}', "
+            f"'{random.choice(LOOK_FOR)}', '{random.choice(OS)}', '{random.choice(LANGUAGES)}', {latitude}, {longitude}, {max_distance_km}, {age}, '{u_id}')"
         )
 
     sql = "BEGIN;\n"
     # Added 'role' to the column list
     sql += "INSERT INTO users (id, email, last_seen_at, name, password, profile_picture, role) VALUES " + ",\n".join(users_sql) + ";\n"
-    sql += "INSERT INTO profiles (id, about_me, is_online, user_id) VALUES " + ",\n".join(profiles_sql) + ";\n"
-    sql += "INSERT INTO bios (id, city, coding_style, experience_level, look_for, preferred_os, primary_language, user_id) VALUES " + ",\n".join(bios_sql) + ";\n"
+    sql += "INSERT INTO profiles (id, about_me, user_id) VALUES " + ",\n".join(profiles_sql) + ";\n"
+    sql += "INSERT INTO bios (id, coding_style, experience_level, look_for, preferred_os, primary_language, latitude, longitude, max_distance_km, age, user_id) VALUES " + ",\n".join(bios_sql) + ";\n"
     sql += "COMMIT;"
     return sql
 

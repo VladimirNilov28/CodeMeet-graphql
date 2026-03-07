@@ -9,5 +9,10 @@ public class BioDto {
     private String lookFor;
     private String preferredOs;
     private String codingStyle;
-    private String city;
+    private Double latitude;
+    private Double longitude;
+    private Integer maxDistanceKm;
+    private boolean locationVisible = true;
+    private Integer age;
+    private boolean ageVisible = true;
 }

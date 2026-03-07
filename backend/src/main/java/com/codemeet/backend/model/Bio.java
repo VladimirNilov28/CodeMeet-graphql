@@ -33,7 +33,16 @@ public class Bio {
     
     @Column(columnDefinition="TEXT")
     private String codingStyle;
-    
-    @Column(columnDefinition="TEXT")
-    private String city;
+
+    @Column(columnDefinition = "double precision")
+    private Double latitude;
+
+    @Column(columnDefinition = "double precision")
+    private Double longitude;
+
+    @Column(name = "max_distance_km", columnDefinition = "INT")
+    private Integer maxDistanceKm;
+
+    @Column(columnDefinition="INT")
+    private Integer age;
 }

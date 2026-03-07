@@ -16,9 +16,9 @@ CodeMeet is a social platform tailored for coders. It provides:
 
 ### Core
 - **Registration & Login** — JWT-based authentication with bcrypt-hashed passwords. Logout available from every authenticated page.
-- **Bio & Profile** — Six biographical data points (primary language, experience level, looking for, preferred OS, coding style, city) plus a free-text "About Me" (1 000 chars). All editable at any time via the onboarding form or Settings.
-- **Profile Picture** — Upload / change avatar; placeholder icon shown when none is set. Stored on the file system at `~/.codemeet/uploads/` (survives rebuilds).
-- **Recommendation Engine** — Weighted scoring across all six bio fields (language 30 pts, city 25 pts, lookFor 20 pts, experience 15 pts, OS 5 pts, codingStyle 5 pts). Returns a maximum of 10 results, strongest first.
+- **Bio & Profile** — Seven biographical data points (primary language, experience level, looking for, preferred OS, coding style, GPS location + radius, age) plus a free-text "About Me" (1 000 chars). All editable at any time via the onboarding form or Settings.
+- **Profile Picture** — Upload, change, and remove avatar; placeholder icon shown when none is set. Stored on the file system at `~/.codemeet/uploads/` (survives rebuilds).
+- **Recommendation Engine** — Weighted scoring across the bio fields (language 30 pts, GPS distance up to 25 pts, lookFor 20 pts, experience 15 pts, age proximity up to 10 pts, OS 5 pts, codingStyle 5 pts). Weak matches under the minimum threshold are discarded. Returns a maximum of 10 results, strongest first.
 - **Connections** — Send / accept / reject connection requests, disconnect from existing connections. Real-time WebSocket notifications for incoming requests.
 - **Chat** — Full real-time STOMP messaging: paginated history, file/image attachments, read receipts (✓/✓✓), typing indicators, in-conversation search, unread-message badge.
 - **Profile Visibility** — Profiles return 404 to users who are not recommended, pending, or connected. Emails are never exposed to other users.
@@ -32,7 +32,8 @@ CodeMeet is a social platform tailored for coders. It provides:
 - **Theme System** — Five themes (Default, GitHub Dark, VS Code Dark+, Dracula, Custom). Custom theme derives a full Tailwind palette from three user-picked hex colours via HSL manipulation. Restored before first paint via an inline `<script>` in `index.html`.
 - **Font Picker** — Nine presets: Inter (default), five Monaspace variants (Argon, Krypton, Neon, Radon, Xenon — self-hosted woff2), JetBrains Mono, Fira Code, System UI.
 - **Background Picker** — Five CSS pattern presets (Dot Matrix, Grid Lines, Crosshatch, Gradient Mesh, None) plus custom image upload (stored as data-URL in localStorage).
-- **Privacy Controls** — Toggleable visibility for online status, typing indicator, and read receipts.
+- **Privacy Controls** — Toggleable visibility for avatar, GPS match radius, age, and last-seen status.
+- **Support Links** — Settings includes direct links for bug reporting and the Gitea repository.
 
 ### Responsive Design
 - Desktop sidebar navigation + mobile bottom-nav bar.
@@ -55,7 +56,7 @@ CodeMeet is a social platform tailored for coders. It provides:
 | Spring Boot Starter Data JPA | — |
 | Spring Boot Starter Security | — |
 | Spring Boot Starter WebSocket | — |
-| PostgreSQL (JDBC driver) | — |
+| PostgreSQL + PostGIS (JDBC driver) | — |
 | JJWT (API + Impl + Jackson) | 0.12.5 |
 | Lombok | — |
 | Maven (wrapper included) | — |
@@ -76,7 +77,7 @@ CodeMeet is a social platform tailored for coders. It provides:
 ### Prerequisites
 - **Java JDK 21** — [Eclipse Temurin](https://adoptium.net/temurin/releases/?version=21) or `sudo apt install openjdk-21-jdk`
 - **Node.js 18+** — [nodejs.org](https://nodejs.org/) or via NVM
-- **PostgreSQL** — [postgresql.org/download](https://www.postgresql.org/download/) or `sudo apt install postgresql postgresql-contrib`
+- **PostgreSQL + PostGIS** — [postgresql.org/download](https://www.postgresql.org/download/) or `sudo apt install postgresql postgresql-contrib postgis`
 - **Maven** (optional) — a Maven wrapper (`mvnw` / `mvnw.cmd`) is included in the backend directory
 
 ### Database Setup
@@ -124,7 +125,7 @@ This single command will:
 1. **Build the frontend** (Node 20-Alpine) — installs deps and runs `npm run build`.
 2. **Build the backend** (Maven 3.9 + Temurin 21) — resolves dependencies, copies the compiled frontend into Spring's `static/` resources, and packages the fat JAR.
 3. **Produce a minimal runtime image** (Temurin 21 JRE-Alpine) containing only the final JAR.
-4. **Start PostgreSQL 16** (Alpine) with a health-check, creating the database automatically.
+4. **Start PostgreSQL 16 + PostGIS** (Alpine) with a health-check, creating the database automatically.
 5. **Start the app** on `http://localhost:8080` once Postgres is healthy.
 
 The frontend is served by Spring Boot itself, so you only need **one URL** — `http://localhost:8080`.
@@ -133,7 +134,7 @@ The frontend is served by Spring Boot itself, so you only need **one URL** — `
 
 | Service | Image | Port | Notes |
 |---|---|---|---|
-| `database` | `postgres:16-alpine` | 5432 | User `postgres`, password `12345`, DB `codemeet_db` |
+| `database` | `postgis/postgis:16-3.4-alpine` | 5432 | User `postgres`, password `12345`, DB `codemeet_db` |
 | `app` | Built from `./Dockerfile` | 8080 | Connects to the `database` service via Docker networking |
 
 Database data is persisted in the `db_data` named volume, so it survives container restarts.
@@ -175,7 +176,7 @@ Both Docker and local setups now use the same database name (`codemeet_db`), use
 ## Usage
 1. Open `http://localhost:5173`.
 2. Register a new account.
-3. Complete the Bio onboarding (six data points + optional About Me).
+3. Complete the Bio onboarding (GPS location, match radius, age, and the rest of your profile data + optional About Me).
 4. Browse recommendations on **Matches** — connect or dismiss.
 5. Manage requests on **Connections**.
 6. Chat in real-time with connected users (text + file attachments).
@@ -192,19 +193,31 @@ Both Docker and local setups now use the same database name (`codemeet_db`), use
 | POST | `/api/me/bio` | Create / update bio |
 | GET | `/api/me/profile` | Current user's profile (aboutMe) |
 | POST | `/api/me/profile` | Create / update profile |
+| GET | `/api/me/privacy` | Current user's privacy settings |
+| POST | `/api/me/privacy` | Create / update privacy settings |
 | POST | `/api/me/profile-picture` | Upload avatar |
+| DELETE | `/api/me/profile-picture` | Remove avatar |
 | POST | `/api/me/alias` | Change display name |
 | GET | `/api/users/{id}` | Public user summary |
 | GET | `/api/users/{id}/bio` | Public user bio |
 | GET | `/api/users/{id}/profile` | Public user profile |
 | GET | `/api/recommendations` | Up to 10 recommendation IDs |
+| POST | `/api/recommendations/skip/{id}` | Skip a recommendation for 7 days |
+| DELETE | `/api/recommendations/skip/{id}` | Undo a skip |
+| GET | `/api/recommendations/skipped` | List active skipped profiles |
 | GET | `/api/connections` | Connected user IDs |
 | POST | `/api/connections/request/{id}` | Send connection request |
 | POST | `/api/connections/{id}/accept` | Accept request |
 | POST | `/api/connections/{id}/reject` | Reject request |
 | DELETE | `/api/connections/disconnect/{id}` | Disconnect |
+| GET | `/api/block` | List blocked users |
+| POST | `/api/block/{id}` | Block a user |
+| DELETE | `/api/block/{id}` | Unblock a user |
 | GET | `/api/chat/partners` | Chat partner list |
 | GET | `/api/chat/history/{id}` | Paginated message history |
-| POST | `/api/chat/upload` | Upload chat attachment |
+| GET | `/api/chat/presence` | Presence snapshot for connected users |
+| POST | `/api/chat/read/{id}` | Mark a chat as read |
+| POST | `/api/chat/send/{id}` | REST fallback for sending a chat message |
+| POST | `/api/chat/upload/{id}` | Upload chat attachment |
 
 All `/api/**` routes (except auth) require a valid `Authorization: Bearer <token>` header. Profile endpoints return **404** if the caller lacks permission.

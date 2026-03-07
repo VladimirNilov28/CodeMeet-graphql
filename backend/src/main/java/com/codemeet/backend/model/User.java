@@ -31,6 +31,18 @@ public class User {
 
     private Instant lastSeenAt;
 
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean hideAvatar = false;
+
+    @Column(name = "hide_location", nullable = false, columnDefinition = "boolean default false")
+    private boolean hideLocation = false;
+
+    @Column(name = "hide_age", nullable = false, columnDefinition = "boolean default false")
+    private boolean hideAge = false;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean hideLastSeen = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "varchar(255) default 'USER'")
     private Role role = Role.USER;

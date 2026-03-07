@@ -47,4 +47,24 @@ public class FileService {
 
         return "/uploads/" + newFileName; // returning the static URL path
     }
+
+    public void deleteFileByUrl(String fileUrl) throws IOException {
+        if (fileUrl == null || fileUrl.isBlank()) {
+            return;
+        }
+
+        String normalized = fileUrl.replace('\\', '/').trim();
+        String fileName = Paths.get(normalized).getFileName().toString();
+        if (!StringUtils.hasText(fileName)) {
+            return;
+        }
+
+        Path uploadPath = Paths.get(uploadDir);
+        Path targetPath = uploadPath.resolve(fileName).normalize();
+        if (!targetPath.startsWith(uploadPath.normalize())) {
+            throw new IOException("Refusing to delete file outside upload directory");
+        }
+
+        Files.deleteIfExists(targetPath);
+    }
 }

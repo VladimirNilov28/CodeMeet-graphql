@@ -12,6 +12,7 @@ import com.codemeet.backend.repository.MessageRepository;
 import com.codemeet.backend.repository.UserRepository;
 import com.codemeet.backend.service.FileService;
 import com.codemeet.backend.service.PresenceService;
+import com.codemeet.backend.service.RecommendationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
+        // Serves both real-time chat events and REST endpoints used to bootstrap message history and partner lists.
 
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
@@ -43,30 +45,34 @@ public class ChatController {
     private final SimpMessagingTemplate messagingTemplate;
         private final PresenceService presenceService;
         private final FileService fileService;
+        private final RecommendationService recommendationService;
 
-        public ChatController(MessageRepository messageRepository, UserRepository userRepository, ConnectionRepository connectionRepository, SimpMessagingTemplate messagingTemplate, PresenceService presenceService, FileService fileService) {
+        public ChatController(MessageRepository messageRepository, UserRepository userRepository, ConnectionRepository connectionRepository, SimpMessagingTemplate messagingTemplate, PresenceService presenceService, FileService fileService, RecommendationService recommendationService) {
         this.messageRepository = messageRepository;
         this.userRepository = userRepository;
         this.connectionRepository = connectionRepository;
         this.messagingTemplate = messagingTemplate;
                 this.presenceService = presenceService;
                 this.fileService = fileService;
+                this.recommendationService = recommendationService;
     }
 
-    // --- WebSocket Endpoints ---
+        // WebSocket endpoints carry live chat events so the UI can update without polling.
 
-    // Expected destination mapping: /app/chat
+        // Handles messages published to /app/chat and mirrors the saved message to both participants.
     @MessageMapping("/chat")
     public void processMessage(@Payload MessageDto chatMessage, Principal principal) {
 
-                if (principal == null || principal.getName() == null) {
-                        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized websocket session");
-                }
+        if (principal == null || principal.getName() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized websocket session");
+        }
 
-                User sender = resolvePrincipalUser(principal.getName());
+        User sender = resolvePrincipalUser(principal.getName());
 
         User recipient = userRepository.findById(chatMessage.getRecipientId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipient not found"));
+
+        ensureUsersCanInteract(sender, recipient);
 
         connectionRepository.findConnectionBetweenUsers(sender, recipient, ConnectionStatus.ACCEPTED)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not connected with this user"));
@@ -79,7 +85,7 @@ public class ChatController {
 
         MessageDto mapped = mapToDto(savedMessage);
 
-        // Send to recipient and echo back to sender
+        // Deliver to the recipient and echo back to the sender so both clients stay in sync from the persisted record.
         messagingTemplate.convertAndSendToUser(
                 recipient.getId().toString(), "/queue/messages", mapped
         );
@@ -89,29 +95,31 @@ public class ChatController {
         );
     }
 
-        @MessageMapping("/chat/typing")
-        public void processTyping(@Payload TypingEventDto typingEvent, Principal principal) {
-                if (principal == null || principal.getName() == null) {
-                        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized websocket session");
-                }
-
-                User sender = resolvePrincipalUser(principal.getName());
-                User recipient = userRepository.findById(typingEvent.getRecipientId())
-                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipient not found"));
-
-                connectionRepository.findConnectionBetweenUsers(sender, recipient, ConnectionStatus.ACCEPTED)
-                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not connected with this user"));
-
-                TypingEventDto outbound = new TypingEventDto();
-                outbound.setSenderId(sender.getId());
-                outbound.setRecipientId(recipient.getId());
-                outbound.setTyping(typingEvent.isTyping());
-
-                messagingTemplate.convertAndSendToUser(recipient.getId().toString(), "/queue/typing", outbound);
+    @MessageMapping("/chat/typing")
+    public void processTyping(@Payload TypingEventDto typingEvent, Principal principal) {
+        if (principal == null || principal.getName() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized websocket session");
         }
 
+        User sender = resolvePrincipalUser(principal.getName());
+        User recipient = userRepository.findById(typingEvent.getRecipientId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipient not found"));
 
-    // --- REST Endpoints for History & Initialization  ---
+        ensureUsersCanInteract(sender, recipient);
+
+        connectionRepository.findConnectionBetweenUsers(sender, recipient, ConnectionStatus.ACCEPTED)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not connected with this user"));
+
+        TypingEventDto outbound = new TypingEventDto();
+        outbound.setSenderId(sender.getId());
+        outbound.setRecipientId(recipient.getId());
+        outbound.setTyping(typingEvent.isTyping());
+
+        messagingTemplate.convertAndSendToUser(recipient.getId().toString(), "/queue/typing", outbound);
+    }
+
+
+        // REST endpoints bootstrap chat screens with history, uploads, partner lists, and presence snapshots.
 
     @GetMapping("/history/{partnerId}")
     public ResponseEntity<Page<MessageDto>> getChatHistory(
@@ -124,7 +132,9 @@ public class ChatController {
         User partner = userRepository.findById(partnerId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        // Must be connected
+        ensureUsersCanInteract(currentUser, partner);
+                
+        // Chat history is only available for accepted connections.
         connectionRepository.findConnectionBetweenUsers(currentUser, partner, ConnectionStatus.ACCEPTED)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not connected with this user"));
 
@@ -135,7 +145,7 @@ public class ChatController {
         return ResponseEntity.ok(response);
     }
     
-    // Quick REST endpoint for standard messaging (if user defaults outside WS)
+        // Provides a non-WebSocket fallback so sending still works when the live socket is unavailable.
     @PostMapping("/send/{recipientId}")
     public ResponseEntity<MessageDto> sendRestMessage(
             @PathVariable UUID recipientId, 
@@ -145,6 +155,8 @@ public class ChatController {
           User sender = getCurrentUser(authentication);
           User recipient = userRepository.findById(recipientId)
                   .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipient not found"));
+
+          ensureUsersCanInteract(sender, recipient);
 
           connectionRepository.findConnectionBetweenUsers(sender, recipient, ConnectionStatus.ACCEPTED)
                   .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not connected with this user"));
@@ -157,7 +169,7 @@ public class ChatController {
 
           MessageDto dto = mapToDto(savedMessage);
 
-          // Broadcast to connected WS sessions
+          // If either user has an active socket session, push the persisted message there immediately.
           messagingTemplate.convertAndSendToUser(
                   recipient.getId().toString(), "/queue/messages", dto
           );
@@ -175,6 +187,8 @@ public class ChatController {
         User sender = getCurrentUser(authentication);
         User recipient = userRepository.findById(recipientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipient not found"));
+
+        ensureUsersCanInteract(sender, recipient);
 
         connectionRepository.findConnectionBetweenUsers(sender, recipient, ConnectionStatus.ACCEPTED)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not connected with this user"));
@@ -208,31 +222,29 @@ public class ChatController {
         return ResponseEntity.ok(dto);
     }
 
-    // Get Active Chats overview – includes ALL accepted connections so new
-    // conversations appear immediately even before any messages are exchanged.
+        // Returns the chat sidebar model, including accepted connections that do not have message history yet.
     @GetMapping("/partners")
     public ResponseEntity<List<Map<String, Object>>> getChatPartners(Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
 
-        // Partners with existing messages (ordered by most recent)
+                // Existing conversations come first so the sidebar stays ordered by recent activity.
         List<UUID> messagePartnerIds = messageRepository.findActiveChatPartners(currentUser.getId());
 
-        // All accepted connections (includes partners with no messages yet)
+                // Accepted connections without messages are appended so a brand-new match can be opened immediately.
         List<Connection> acceptedConnections = connectionRepository.findByUserAndStatus(currentUser, ConnectionStatus.ACCEPTED);
 
-        // Build ordered result: message-partners first (preserve recency), then
-        // connected users that have no chat history yet.
+                // Preserve recency for active chats, then add remaining accepted partners exactly once.
         java.util.LinkedHashSet<UUID> orderedIds = new java.util.LinkedHashSet<>(messagePartnerIds);
         for (Connection conn : acceptedConnections) {
             UUID peerId = conn.getRequester().getId().equals(currentUser.getId())
                     ? conn.getRecipient().getId()
                     : conn.getRequester().getId();
-            orderedIds.add(peerId); // no-op if already present
+                        orderedIds.add(peerId); // LinkedHashSet keeps the first insertion order and ignores duplicates.
         }
 
         List<Map<String, Object>> response = orderedIds.stream().map(id -> {
             User p = userRepository.findById(id).orElse(null);
-            if (p != null) {
+                        if (p != null && !recommendationService.isBlockedEitherDirection(currentUser, p)) {
                 long unreadCount = messageRepository.countUnreadMessages(p, currentUser);
                 Map<String, Object> map = new java.util.HashMap<>();
                 map.put("id", p.getId().toString());
@@ -255,6 +267,8 @@ public class ChatController {
         User sender = userRepository.findById(senderId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
+        ensureUsersCanInteract(currentUser, sender);
+
         List<Message> unreads = messageRepository.findBySenderAndRecipientAndIsReadFalse(sender, currentUser);
         for(Message m : unreads) {
             m.setRead(true);
@@ -263,24 +277,27 @@ public class ChatController {
         return ResponseEntity.ok("Marked as read");
     }
 
-        @GetMapping("/presence")
-        public ResponseEntity<Map<String, PresenceStatusDto>> getPresenceForConnections(Authentication authentication) {
-                User currentUser = getCurrentUser(authentication);
-                List<Connection> acceptedConnections = connectionRepository.findByUserAndStatus(currentUser, ConnectionStatus.ACCEPTED);
+    @GetMapping("/presence")
+    public ResponseEntity<Map<String, PresenceStatusDto>> getPresenceForConnections(Authentication authentication) {
+        User currentUser = getCurrentUser(authentication);
+        List<Connection> acceptedConnections = connectionRepository.findByUserAndStatus(currentUser, ConnectionStatus.ACCEPTED);
 
-                Map<String, PresenceStatusDto> response = new HashMap<>();
-                for (Connection connection : acceptedConnections) {
-                        User peer = connection.getRequester().getId().equals(currentUser.getId())
-                                        ? connection.getRecipient()
-                                        : connection.getRequester();
-                        response.put(
-                                peer.getId().toString(),
-                                new PresenceStatusDto(presenceService.isOnline(peer.getId()), peer.getLastSeenAt())
-                        );
-                }
-
-                return ResponseEntity.ok(response);
+        Map<String, PresenceStatusDto> response = new HashMap<>();
+        for (Connection connection : acceptedConnections) {
+            User peer = connection.getRequester().getId().equals(currentUser.getId())
+                    ? connection.getRecipient()
+                    : connection.getRequester();
+            if (!recommendationService.isBlockedEitherDirection(currentUser, peer)) {
+                boolean lastSeenVisible = !peer.isHideLastSeen();
+                response.put(
+                        peer.getId().toString(),
+                        new PresenceStatusDto(presenceService.isOnline(peer.getId()), lastSeenVisible ? peer.getLastSeenAt() : null, lastSeenVisible)
+                );
+            }
         }
+
+        return ResponseEntity.ok(response);
+    }
 
 
     private MessageDto mapToDto(Message message) {
@@ -300,6 +317,12 @@ public class ChatController {
         return userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
     }
+
+        private void ensureUsersCanInteract(User userA, User userB) {
+                if (recommendationService.isBlockedEitherDirection(userA, userB)) {
+                        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot interact with this user");
+                }
+        }
 
         private User resolvePrincipalUser(String principalName) {
                 try {

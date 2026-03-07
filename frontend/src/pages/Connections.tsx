@@ -6,18 +6,18 @@ import { IconCheck, IconNetwork } from '../components/Icons';
 const BACKEND_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
 
 type ConnectionRequest = {
-  id: string; // userId
+  id: string; // The requester user id, used for profile lookups and chat navigation.
   connectionId: string;
   name: string;
   profilePicture?: string;
-  bio?: { city?: string; primaryLanguage?: string };
+  bio?: { maxDistanceKm?: number; locationVisible?: boolean; primaryLanguage?: string };
 };
 
 type ActiveConnection = {
-  id: string; // userId
+  id: string; // The connected user's id, matching the lightweight backend response shape.
   name: string;
   profilePicture?: string;
-  bio?: { city?: string; primaryLanguage?: string };
+  bio?: { maxDistanceKm?: number; locationVisible?: boolean; primaryLanguage?: string };
 };
 
 const Connections: React.FC = () => {
@@ -34,13 +34,13 @@ const Connections: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch both in parallel
+      // Load pending and accepted relationships together so the page switches tabs instantly.
       const [pendingRes, activeRes] = await Promise.all([
         api.get('/connections/pending'),
         api.get('/connections')
       ]);
 
-      // Enrich Pending
+      // The connection endpoints return ids only, so fetch user and bio data to render richer cards.
       const detailedPending = await Promise.all(
         pendingRes.data.map(async (req: any) => {
           try {
@@ -60,7 +60,7 @@ const Connections: React.FC = () => {
       );
       setPendingRequests(detailedPending);
 
-      // Enrich Active
+      // Accepted connections use the same enrichment pattern to keep both tabs visually consistent.
       const detailedActive = await Promise.all(
         activeRes.data.map(async (conn: any) => {
           try {
@@ -79,7 +79,7 @@ const Connections: React.FC = () => {
       );
       setActiveConnections(detailedActive);
       
-      // Auto-select pending if there are any
+      // Surface pending requests first when action is required from the current user.
       if (detailedPending.length > 0) {
         setActiveTab('pending');
       }
@@ -95,7 +95,7 @@ const Connections: React.FC = () => {
     try {
       await api.post(`/connections/${req.connectionId}/accept`);
       setPendingRequests(prev => prev.filter(p => p.connectionId !== req.connectionId));
-      // Add to active locally
+      // Move the accepted user into the local network list immediately for snappier UX.
       const newActive: ActiveConnection = {
         id: req.id,
         name: req.name,
@@ -210,9 +210,9 @@ const Connections: React.FC = () => {
                                             <span className="px-2 py-1 bg-zinc-900/50 rounded text-[10px] text-zinc-400 border border-zinc-800">
                                                 {req.bio.primaryLanguage}
                                             </span>
-                                            {req.bio.city && (
+                                            {req.bio.locationVisible !== false && req.bio.maxDistanceKm != null && (
                                                 <span className="px-2 py-1 bg-zinc-900/50 rounded text-[10px] text-zinc-400 border border-zinc-800">
-                                                    {req.bio.city}
+                                                {req.bio.maxDistanceKm} km radius
                                                 </span>
                                             )}
                                         </div>

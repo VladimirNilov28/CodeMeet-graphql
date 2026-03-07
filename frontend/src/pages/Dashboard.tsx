@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import FeedbackBanner from '../components/FeedbackBanner.tsx';
 import { IconCamera, IconCode, IconChart, IconTarget, IconLaptop, IconMapPin, IconWarning, IconSearch, IconNetwork, IconMessage, IconCheck, IconUser, IconMore } from '../components/Icons';
 import { toHandle } from '../utils/handle';
 
@@ -13,7 +14,15 @@ type Bio = {
     lookFor?: string;
     preferredOs?: string;
     codingStyle?: string;
-    city?: string;
+    latitude?: number;
+    longitude?: number;
+    maxDistanceKm?: number;
+    age?: number;
+};
+
+type FeedbackState = {
+    variant: 'success' | 'error';
+    message: string;
 };
 
 const Dashboard: React.FC = () => {
@@ -21,13 +30,22 @@ const Dashboard: React.FC = () => {
     const [bio, setBio] = useState<Bio | null>(null);
     const [aboutMe, setAboutMe] = useState('');
     const [uploading, setUploading] = useState(false);
-    const [uploadMessage, setUploadMessage] = useState('');
+    const [removingPicture, setRemovingPicture] = useState(false);
     const [aliasInput, setAliasInput] = useState('');
-    const [aliasMessage, setAliasMessage] = useState('');
+    const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+    const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
     const navigate = useNavigate();
+
+    const refreshCurrentUser = async () => {
+        const userRes = await api.get('/me');
+        setUser(userRes.data);
+        setAliasInput(userRes.data?.name || '');
+    };
 
     const calculateCompletion = (bioData: Bio | null): number => {
         if (!bioData) return 0;
+
+        const hasLocationConfigured = bioData.latitude != null && bioData.longitude != null && bioData.maxDistanceKm != null;
 
         const values = [
             bioData.primaryLanguage,
@@ -35,7 +53,8 @@ const Dashboard: React.FC = () => {
             bioData.lookFor,
             bioData.preferredOs,
             bioData.codingStyle,
-            bioData.city,
+            hasLocationConfigured ? 'location-ready' : '',
+            bioData.age != null ? String(bioData.age) : '',
         ];
 
         const filled = values.filter((value) => (value || '').trim().length > 0).length;
@@ -79,18 +98,21 @@ const Dashboard: React.FC = () => {
     const handleAliasUpdate = async () => {
         const trimmed = aliasInput.trim();
         if (!trimmed) {
-            setAliasMessage('ALIAS_CANNOT_BE_EMPTY');
+            setFeedback({ variant: 'error', message: 'Alias cannot be empty.' });
             return;
         }
 
         try {
             await api.post('/me/alias', { name: trimmed });
-            const userRes = await api.get('/me');
-            setUser(userRes.data);
-            setAliasInput(userRes.data?.name || trimmed);
-            setAliasMessage('ALIAS_UPDATED');
+            await refreshCurrentUser();
+            setAliasInput(trimmed);
+            setFeedback({ variant: 'success', message: 'Alias updated successfully.' });
         } catch (err: any) {
-            setAliasMessage('ALIAS_UPDATE_FAILED');
+            const backendMessage = err.response?.data?.message || err.response?.data;
+            setFeedback({
+                variant: 'error',
+                message: typeof backendMessage === 'string' ? backendMessage : 'Could not update your alias right now.'
+            });
         }
     };
 
@@ -102,7 +124,7 @@ const Dashboard: React.FC = () => {
         formData.append('file', file);
 
         setUploading(true);
-        setUploadMessage('');
+        setFeedback(null);
         
         try {
             await api.post('/me/profile-picture', formData, {
@@ -110,14 +132,38 @@ const Dashboard: React.FC = () => {
                     'Content-Type': 'multipart/form-data',
                 },
             });
-            setUploadMessage('AVATAR_UPLOAD_SUCCESS');
-            // Refresh user to get new avatar URL
-            const userRes = await api.get('/me');
-            setUser(userRes.data);
+            setFeedback({ variant: 'success', message: 'Avatar updated successfully.' });
+            await refreshCurrentUser();
         } catch (err: any) {
-            setUploadMessage('UPLOAD_FAILED: ' + (err.response?.data?.message || err.message));
+            setFeedback({
+                variant: 'error',
+                message: err.response?.data?.message || err.message || 'Could not upload your avatar right now.'
+            });
         } finally {
             setUploading(false);
+        }
+    };
+
+    const handleRemoveProfilePicture = async () => {
+        if (!user?.profilePicture || removingPicture) {
+            return;
+        }
+
+        setRemovingPicture(true);
+        setFeedback(null);
+
+        try {
+            await api.delete('/me/profile-picture');
+            await refreshCurrentUser();
+            setFeedback({ variant: 'success', message: 'Avatar removed successfully.' });
+            setIsProfileMenuOpen(false);
+        } catch (err: any) {
+            setFeedback({
+                variant: 'error',
+                message: err.response?.data?.message || err.message || 'Could not remove your avatar right now.'
+            });
+        } finally {
+            setRemovingPicture(false);
         }
     };
 
@@ -142,10 +188,55 @@ const Dashboard: React.FC = () => {
                  {/* Identity Card */}
                  <div className="cyber-card p-8 lg:col-span-1 flex flex-col items-center text-center relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="text-zinc-500 hover:text-indigo-400" aria-label="Profile options">
+                        <button
+                            className="text-zinc-500 hover:text-indigo-400"
+                            aria-label="Profile options"
+                            onClick={() => setIsProfileMenuOpen((prev) => !prev)}
+                        >
                             <IconMore className="w-5 h-5" />
                         </button>
                     </div>
+
+                    {isProfileMenuOpen && (
+                        <div className="absolute top-12 right-4 z-20 w-44 rounded-xl border border-white/10 bg-zinc-900/95 p-2 text-left shadow-xl backdrop-blur-xl">
+                            <button
+                                onClick={() => {
+                                    setIsProfileMenuOpen(false);
+                                    navigate(`/profile/${user.id}`);
+                                }}
+                                className="w-full rounded-lg px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
+                            >
+                                View public profile
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setIsProfileMenuOpen(false);
+                                    navigate('/settings');
+                                }}
+                                className="w-full rounded-lg px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
+                            >
+                                Open settings
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setIsProfileMenuOpen(false);
+                                    navigate('/setup-bio');
+                                }}
+                                className="w-full rounded-lg px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
+                            >
+                                Edit bio
+                            </button>
+                            {user.profilePicture && (
+                                <button
+                                    onClick={handleRemoveProfilePicture}
+                                    disabled={removingPicture}
+                                    className="w-full rounded-lg px-3 py-2 text-sm text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {removingPicture ? 'Removing avatar…' : 'Remove avatar'}
+                                </button>
+                            )}
+                        </div>
+                    )}
                     
                     <div className="relative mb-6">
                         <div className="w-32 h-32 rounded-full border-4 border-zinc-800 bg-zinc-900 overflow-hidden shadow-2xl relative z-10 box-border">
@@ -190,10 +281,10 @@ const Dashboard: React.FC = () => {
                            </button>
                         </div>
                         
-                        {(aliasMessage || uploadMessage) && (
-                           <div className="text-xs font-medium text-emerald-400 bg-emerald-400/10 py-2 rounded-lg border border-emerald-400/20">
-                              {aliasMessage || uploadMessage}
-                           </div>
+                                {feedback && (
+                                    <FeedbackBanner variant={feedback.variant} className="text-center">
+                                        {feedback.message}
+                                    </FeedbackBanner>
                         )}
                     </div>
                  </div>
@@ -259,8 +350,10 @@ const Dashboard: React.FC = () => {
                                    { label: 'Primary Stack', value: bio.primaryLanguage, icon: <IconCode className="w-4 h-4" /> },
                                    { label: 'Level', value: bio.experienceLevel, icon: <IconChart className="w-4 h-4" /> },
                                    { label: 'Looking For', value: bio.lookFor, icon: <IconTarget className="w-4 h-4" /> },
+                                              { label: 'Age', value: bio.age != null ? String(bio.age) : '', icon: <IconUser className="w-4 h-4" /> },
                                    { label: 'OS', value: bio.preferredOs, icon: <IconLaptop className="w-4 h-4" /> },
-                                   { label: 'Location', value: bio.city, icon: <IconMapPin className="w-4 h-4" /> },
+                                              { label: 'Match Radius', value: bio.maxDistanceKm != null ? `${bio.maxDistanceKm} km` : '', icon: <IconMapPin className="w-4 h-4" /> },
+                                              { label: 'GPS Location', value: bio.latitude != null && bio.longitude != null ? `${bio.latitude.toFixed(3)}, ${bio.longitude.toFixed(3)}` : '', icon: <IconMapPin className="w-4 h-4" /> },
                                 ].map((item, i) => (
                                    <div key={i} className="flex justify-between items-center p-3 rounded-xl bg-zinc-900/50 border border-zinc-800/50 hover:border-zinc-700 transition-colors">
                                       <span className="text-zinc-500 text-sm flex items-center gap-2">{item.icon} {item.label}</span>

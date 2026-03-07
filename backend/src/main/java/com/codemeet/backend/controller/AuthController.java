@@ -15,6 +15,7 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+    // Handles account creation and credential-based sign-in for the REST API.
     
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -54,12 +55,12 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<String> login(@RequestBody LoginRequest request) {
-        // 1. Проверяем, что вообще пришло от React
+        // Log the raw login identifier while troubleshooting authentication issues in development.
         System.out.println(">>> [DEBUG] Login attempt! Identifier: " + request.getIdentifier());
 
         String identifier = request.getIdentifier() != null ? request.getIdentifier().trim() : "";
 
-        // Поиск по email или имени
+        // Accept either email or display name so the frontend can offer a friendlier login experience.
         Optional<User> userOptional = identifier.contains("@")
                 ? userRepository.findByEmail(identifier)
                 : userRepository.findByName(identifier);
@@ -74,12 +75,12 @@ public class AuthController {
             User user = userOptional.get();
             System.out.println(">>> [DEBUG] User found in DB: " + user.getEmail());
 
-            // 2. Сверяем пароли
+            // Only issue a JWT when the provided password matches the stored bcrypt hash.
             boolean passwordMatch = passwordEncoder.matches(request.getPassword(), user.getPassword());
             System.out.println(">>> [DEBUG] Password match result: " + passwordMatch);
 
             if (passwordMatch) {
-                // Защита от NullPointerException, если у старых юзеров нет роли в БД
+                // Fall back to the default user role so older rows without a persisted role can still log in.
                 String roleName = user.getRole() != null ? user.getRole().name() : "USER";
 
                 String token = jwtService.generateToken(user.getEmail(), user.getId().toString(), roleName);

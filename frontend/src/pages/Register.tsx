@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import FeedbackBanner from '../components/FeedbackBanner.tsx';
 import { normalizeHandle } from '../utils/handle';
 
 const Register: React.FC = () => {
@@ -36,9 +37,9 @@ const Register: React.FC = () => {
                 </div>
 
                 {error && (
-                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-4 py-3 rounded-xl text-sm mb-6 text-center">
+                    <FeedbackBanner variant="error" className="mb-6 text-center">
                         {error}
-                    </div>
+                    </FeedbackBanner>
                 )}
 
                 <form onSubmit={handleRegister} className="space-y-4">

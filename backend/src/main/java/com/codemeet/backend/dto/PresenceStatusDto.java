@@ -10,4 +10,5 @@ import java.time.Instant;
 public class PresenceStatusDto {
     private boolean online;
     private Instant lastSeenAt;
+    private boolean lastSeenVisible;
 }

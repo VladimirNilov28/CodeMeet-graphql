@@ -2,10 +2,14 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import api from '../api/axios';
+import FeedbackBanner from '../components/FeedbackBanner.tsx';
 import { IconEdit, IconMore, IconUser, IconMessage, IconSearch, IconInfo, IconPaperclip, IconSend, IconX } from '../components/Icons';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 const BACKEND_BASE_URL = import.meta.env.VITE_WS_BASE_URL || API_BASE_URL.replace(/\/api\/?$/, '');
+const TYPING_RENEW_INTERVAL_MS = 1000;
+const TYPING_IDLE_TIMEOUT_MS = 1200;
+const TYPING_INDICATOR_HIDE_DELAY_MS = 2000;
 
 type ChatPartner = {
   id: string;
@@ -14,6 +18,7 @@ type ChatPartner = {
   unreadCount: number;
    online?: boolean;
    lastSeenAt?: string | null;
+   lastSeenVisible?: boolean;
 };
 
 type Message = {
@@ -37,18 +42,19 @@ type PresenceEvent = {
    userId: string;
    online: boolean;
    lastSeenAt?: string | null;
+   lastSeenVisible?: boolean;
 };
 
 const sortMessagesAsc = (items: Message[]) => {
    return [...items].sort((a, b) => {
       const dateA = new Date(a.timestamp);
       const dateB = new Date(b.timestamp);
-      // Handle invalid dates by pushing them to the end
+      // Invalid timestamps are treated as oldest so stable, valid messages remain in the correct order.
       const ta = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
       const tb = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
       
       if (ta !== tb) return ta - tb;
-      // Secondary sort by ID if timestamps are identical
+      // Use the id as a deterministic tie-breaker when two messages share the same timestamp.
       return (a.id || '').localeCompare(b.id || '');
    });
 };
@@ -68,6 +74,9 @@ const Chat: React.FC = () => {
    const [isEditMode, setIsEditMode] = useState(false);
    const [pendingFile, setPendingFile] = useState<File | null>(null);
    const [uploading, setUploading] = useState(false);
+   const [blockingPartner, setBlockingPartner] = useState(false);
+   const [actionError, setActionError] = useState<string | null>(null);
+   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activePartnerData, setActivePartnerData] = useState<ChatPartner | null>(null);
@@ -79,6 +88,7 @@ const Chat: React.FC = () => {
    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
    const typingIndicatorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
    const typingStateRef = useRef(false);
+   const lastTypingSentAtRef = useRef(0);
 
   useEffect(() => {
     fetchInitialData();
@@ -94,7 +104,7 @@ const Chat: React.FC = () => {
       };
   }, []);
 
-   // Re-render every minute so "last seen" labels stay fresh without page reload
+   // Refresh relative last-seen labels periodically so the header and sidebar do not go stale while the page stays open.
    useEffect(() => {
       const id = setInterval(() => {
          setLastSeenTick(Date.now());
@@ -102,6 +112,27 @@ const Chat: React.FC = () => {
 
       return () => clearInterval(id);
    }, []);
+
+   useEffect(() => {
+      const handleBlocked = (event: Event) => {
+         const customEvent = event as CustomEvent<{ id: string; name?: string }>;
+         const blockedId = customEvent.detail?.id;
+         if (!blockedId) return;
+
+         setPartners((prev) => prev.filter((partner) => partner.id !== blockedId));
+
+         if (partnerId === blockedId) {
+            setActionSuccess(`${customEvent.detail?.name || 'User'} was blocked successfully.`);
+            setActivePartnerData(null);
+            setMessages([]);
+            setIsPartnerTyping(false);
+            setTimeout(() => navigate('/chat'), 1200);
+         }
+      };
+
+      window.addEventListener('codemeet:user-blocked', handleBlocked as EventListener);
+      return () => window.removeEventListener('codemeet:user-blocked', handleBlocked as EventListener);
+   }, [navigate, partnerId]);
 
    useEffect(() => {
       if (partnerId && currentUserId) {
@@ -114,14 +145,14 @@ const Chat: React.FC = () => {
       }
    }, [partnerId, currentUserId]);
 
-      // Keep active partner header in sync
+      // Keep the active header data aligned with the selected route and the latest sidebar state.
    useEffect(() => {
       if (!partnerId) {
          setActivePartnerData(null);
          return;
       }
 
-      // Re-fetch history when switching partners to ensure we have the latest state
+      // Re-fetch on partner switch so a direct navigation still loads the latest persisted history.
       fetchChatHistory(partnerId);
 
       const existingPartner = partners.find((p) => p.id === partnerId);
@@ -133,7 +164,7 @@ const Chat: React.FC = () => {
       setupActivePartnerData(partnerId);
    }, [partnerId, partners]);
 
-  // Keep chat scrolled to the latest message
+   // Always snap to the newest message after the list changes so chat behaves like a messaging app.
   useEffect(() => {
       const scrollToLatest = () => {
          if (messagesContainerRef.current) {
@@ -141,7 +172,7 @@ const Chat: React.FC = () => {
          }
       };
 
-      // Wait one frame so DOM height is finalized
+      // Wait one animation frame so the browser has measured the new message heights first.
       requestAnimationFrame(scrollToLatest);
    }, [messages, partnerId]);
 
@@ -153,13 +184,16 @@ const Chat: React.FC = () => {
       ]);
       setCurrentUserId(userRes.data.id);
       
-      // The backend returns a list of {id, name, unreadCount}. 
-      // Need overfetch to get profilePictures
+      // The sidebar endpoint is intentionally light, so individual user fetches fill in avatars for the richer UI.
       const enhancedPartners = await Promise.all(
          partnersRes.data.map(async (p: any) => {
             try {
                const detail = await api.get(`/users/${p.id}`);
-               return { ...p, profilePicture: detail.data?.profilePicture };
+               return {
+                  ...p,
+                  profilePicture: detail.data?.profilePicture,
+                  lastSeenVisible: detail.data?.lastSeenVisible !== false,
+               };
             } catch {
                return p;
             }
@@ -172,12 +206,13 @@ const Chat: React.FC = () => {
          const partnersWithPresence = enhancedPartners.map((p: ChatPartner) => ({
             ...p,
             online: Boolean(presenceMap[p.id]?.online),
-            lastSeenAt: presenceMap[p.id]?.lastSeenAt || null
+            lastSeenAt: presenceMap[p.id]?.lastSeenAt || null,
+            lastSeenVisible: presenceMap[p.id]?.lastSeenVisible !== false && p.lastSeenVisible !== false,
          }));
 
          setPartners(partnersWithPresence);
 
-      // Startup STOMP Connection
+      // Open the live socket after the current user id is known so subscriptions can filter correctly.
       connectWebSocket(userRes.data.id);
 
     } catch (err) {
@@ -196,15 +231,16 @@ const Chat: React.FC = () => {
                 profilePicture: detail.data.profilePicture,
                unreadCount: 0,
                       online: false,
-                      lastSeenAt: detail.data.lastSeenAt || null
+                      lastSeenAt: detail.data.lastSeenAt || null,
+                      lastSeenVisible: detail.data.lastSeenVisible !== false,
              };
-             // Add securely to partners list if initiated via outside route
+             // If the chat opened from another page, seed the sidebar with the fetched partner exactly once.
              setPartners(prev => {
                 if(prev.find(x => x.id === targetId)) return prev;
                 return [p!, ...prev];
              });
-         } catch {
-             return; // failed to load partner
+          } catch {
+             return; // If the target user cannot be loaded, keep the current screen empty instead of showing stale data.
          }
       }
       setActivePartnerData(p || null);
@@ -235,20 +271,20 @@ const Chat: React.FC = () => {
          stompClient.current = null;
       }
 
-    // STOMP over Standard WebSocket
+   // Use the native WebSocket transport because the backend exposes a plain STOMP broker endpoint.
     const token = localStorage.getItem('token');
     
-    // Convert HTTP URL to WS URL
+   // Derive the socket origin from the configured backend base URL so local and Docker setups both work.
     const wsUrl = BACKEND_BASE_URL.replace(/^http/, 'ws') + '/ws';
     
     const client = new Client({
       brokerURL: wsUrl,
       
-      // Pass the JWT so simple Stomp authorization interceptor works.
+      // Send the JWT during the handshake so the backend can authenticate subscriptions and message sends.
       connectHeaders: {
          Authorization: `Bearer ${token}`
       },
-      // Debug logging
+      // Leave STOMP debug logging enabled to simplify troubleshooting while developing chat flows.
       debug: (str) => {
         console.log('STOMP: ' + str);
       },
@@ -256,15 +292,15 @@ const Chat: React.FC = () => {
       
       onConnect: () => {
          console.log('STOMP Connected');
-         // Subscribe to private user queue
+         // Each user listens on a private queue for direct messages, typing events, and presence updates.
          client.subscribe('/user/queue/messages', (msg) => {
             const incomingMessage: Message = JSON.parse(msg.body);
             
-            // Append message if it belongs to the open chat
+            // Only append messages that belong to the currently visible conversation.
             setMessages((prevMsg) => {
                if (prevMsg.find(m => m.id === incomingMessage.id)) return prevMsg;
                
-               // Read partnerId from URL to avoid stale closure
+               // Read the route directly so socket callbacks do not rely on stale React closures.
                const currentPathId = window.location.pathname.split('/').pop() || '';
                
                const isRelevant = 
@@ -277,7 +313,7 @@ const Chat: React.FC = () => {
                return prevMsg;
             });
 
-            // Update partner list ordering and read counters
+            // Keep the sidebar sorted by most recent activity and maintain unread counts for inactive chats.
             setPartners((prev) => {
                const partnerIdToFind = incomingMessage.senderId === uId ? incomingMessage.recipientId : incomingMessage.senderId;
                let partnerIndex = prev.findIndex(p => p.id === partnerIdToFind);
@@ -296,11 +332,11 @@ const Chat: React.FC = () => {
                if (isTargetingUsAndNotActive) {
                    targetPartner.unreadCount = (targetPartner.unreadCount || 0) + 1;
                } else if (incomingMessage.senderId === partnerIdToFind && currentActiveId === partnerIdToFind) {
-                   // Message received from active screen, silently mark as read
+                     // Messages visible in the open chat can be marked read immediately without extra user action.
                    api.post(`/chat/read/${partnerIdToFind}`).catch(() => {});
                }
 
-               // Lift partner to top (Push to Unshift)
+                  // Move the active conversation to the top so the sidebar mirrors modern chat apps.
                return [targetPartner, ...pArray];
             });
          });
@@ -309,7 +345,7 @@ const Chat: React.FC = () => {
                   const typingEvent: TypingEvent = JSON.parse(msg.body);
                   const activePartnerId = window.location.pathname.split('/').pop() || '';
                   
-                  // Normalize comparison to handle case sensitivity if needed
+                  // Compare normalized ids defensively so UI state is not tripped up by casing differences.
                   if (!activePartnerId || typingEvent.senderId.toLowerCase() !== activePartnerId.toLowerCase()) {
                      return;
                   }
@@ -319,7 +355,7 @@ const Chat: React.FC = () => {
                      clearTimeout(typingIndicatorTimeoutRef.current);
                   }
                   if (typingEvent.typing) {
-                     typingIndicatorTimeoutRef.current = setTimeout(() => setIsPartnerTyping(false), 2000);
+                     typingIndicatorTimeoutRef.current = setTimeout(() => setIsPartnerTyping(false), TYPING_INDICATOR_HIDE_DELAY_MS);
                   }
              });
 
@@ -327,7 +363,12 @@ const Chat: React.FC = () => {
                   const presenceEvent: PresenceEvent = JSON.parse(msg.body);
                   setPartners((prev) => prev.map((p) => (
                      p.id === presenceEvent.userId
-                  ? { ...p, online: presenceEvent.online, lastSeenAt: presenceEvent.lastSeenAt ?? p.lastSeenAt }
+                  ? {
+                     ...p,
+                     online: presenceEvent.online,
+                     lastSeenAt: presenceEvent.lastSeenAt ?? (presenceEvent.lastSeenVisible === false ? null : p.lastSeenAt),
+                     lastSeenVisible: presenceEvent.lastSeenVisible !== false,
+                  }
                         : p
                   )));
              });
@@ -355,10 +396,10 @@ const Chat: React.FC = () => {
             body: JSON.stringify(chatMessage)
          });
       } else {
-         // Fallback to REST HTTP Post
+         // Fall back to REST so message sending still works if the socket reconnect is in progress.
          api.post(`/chat/send/${partnerId}`, { content: newMessage })
             .then((res) => {
-               // Manually add the message to the list if successful
+               // REST responses are inserted locally because they do not round-trip through the socket automatically.
                if (res.data) {
                   setMessages((prevMsg) => sortMessagesAsc([...prevMsg, res.data]));
                }
@@ -400,15 +441,51 @@ const Chat: React.FC = () => {
       }
   };
 
+   const handleBlockPartner = async () => {
+      if (!partnerId || !activePartnerData || blockingPartner) return;
+
+      try {
+         setBlockingPartner(true);
+         setActionError(null);
+         setActionSuccess(null);
+         await api.post(`/block/${partnerId}`);
+         window.dispatchEvent(new CustomEvent('codemeet:user-blocked', {
+            detail: { id: partnerId, name: activePartnerData.name }
+         }));
+         setActionSuccess(`${activePartnerData.name} was blocked successfully.`);
+         setPartners((prev) => prev.filter((partner) => partner.id !== partnerId));
+         setIsMenuOpen(false);
+         setTimeout(() => {
+            setActivePartnerData(null);
+            setMessages([]);
+            setIsPartnerTyping(false);
+            navigate('/chat');
+         }, 1200);
+      } catch (err) {
+         console.error('Failed to block user', err);
+         setActionError('Could not block this user right now.');
+      } finally {
+         setBlockingPartner(false);
+      }
+   };
+
    const sendTyping = (typing: boolean) => {
       if (!partnerId || !stompClient.current?.connected) {
          return;
       }
-      if (typingStateRef.current === typing) {
+
+      const now = Date.now();
+      const isDuplicateTrue =
+         typing &&
+         typingStateRef.current === true &&
+         now - lastTypingSentAtRef.current < TYPING_RENEW_INTERVAL_MS;
+
+      if ((!typing && typingStateRef.current === false) || isDuplicateTrue) {
          return;
       }
 
       typingStateRef.current = typing;
+      lastTypingSentAtRef.current = now;
       stompClient.current.publish({
          destination: '/app/chat/typing',
          body: JSON.stringify({ recipientId: partnerId, typing })
@@ -426,7 +503,7 @@ const Chat: React.FC = () => {
          if (typingTimeoutRef.current) {
             clearTimeout(typingTimeoutRef.current);
          }
-         typingTimeoutRef.current = setTimeout(() => sendTyping(false), 1200);
+         typingTimeoutRef.current = setTimeout(() => sendTyping(false), TYPING_IDLE_TIMEOUT_MS);
       } else {
          if (typingTimeoutRef.current) {
             clearTimeout(typingTimeoutRef.current);
@@ -462,6 +539,16 @@ const Chat: React.FC = () => {
 
       const diffDays = Math.floor(diffHours / 24);
       return `${diffDays}d ago`;
+   };
+
+   const getPresenceLabel = (partner?: ChatPartner | null) => {
+      if (partner?.online) {
+         return 'Active now';
+      }
+      if (partner?.lastSeenVisible === false) {
+         return 'Last seen hidden';
+      }
+      return `Seen ${formatLastSeen(partner?.lastSeenAt)}`;
    };
 
    const filteredMessages = searchQuery.trim().length === 0
@@ -513,6 +600,15 @@ const Chat: React.FC = () => {
                   >
                      Clear local message view
                   </button>
+                  {partnerId && (
+                     <button
+                        onClick={handleBlockPartner}
+                        disabled={blockingPartner}
+                        className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 text-red-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                     >
+                        {blockingPartner ? 'Blocking…' : 'Block user'}
+                     </button>
+                  )}
                </div>
             )}
 
@@ -548,7 +644,7 @@ const Chat: React.FC = () => {
                      <div className="ml-3 truncate flex-1">
                         <div className="flex justify-between items-center mb-0.5">
                            <p className={`font-medium text-sm truncate ${p.unreadCount > 0 ? 'text-zinc-100' : 'text-zinc-300 group-hover:text-zinc-200'}`}>{p.name}</p>
-                           <span className="text-[10px] text-zinc-600">{p.online ? 'Now' : formatLastSeen(p.lastSeenAt)}</span>
+                           <span className="text-[10px] text-zinc-600">{p.online ? 'Now' : (p.lastSeenVisible === false ? 'Hidden' : formatLastSeen(p.lastSeenAt))}</span>
                         </div>
                           <p className={`text-xs truncate ${(p.id === activePartnerData?.id && isPartnerTyping) ? 'text-indigo-400 italic' : 'text-zinc-500'}`}>
                            {p.id === activePartnerData?.id && isPartnerTyping ? 'Typing...' : (p.unreadCount > 0 ? 'New message' : 'Click to chat')}
@@ -565,6 +661,18 @@ const Chat: React.FC = () => {
          {/* Decorative Gradients */}
          <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-600/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
          <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-600/5 rounded-full blur-3xl pointer-events-none translate-y-1/2 -translate-x-1/2"></div>
+
+         {actionError && (
+            <FeedbackBanner variant="error" className="absolute top-4 left-1/2 z-30 -translate-x-1/2 shadow-lg">
+               {actionError}
+            </FeedbackBanner>
+         )}
+
+         {actionSuccess && (
+            <FeedbackBanner variant="success" className="absolute top-4 left-1/2 z-30 -translate-x-1/2 shadow-lg">
+               {actionSuccess}
+            </FeedbackBanner>
+         )}
 
           {!partnerId ? (
               <div className="flex-1 flex items-center justify-center flex-col gap-6 text-zinc-500 z-10">
@@ -603,7 +711,7 @@ const Chat: React.FC = () => {
                               {activePartnerData?.online && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse inline-block opacity-50"></span>}
                            </h3>
                            <span className={`text-xs font-medium ${activePartnerData?.online ? 'text-emerald-500/80' : 'text-zinc-500'}`}>
-                              {activePartnerData?.online ? 'Active now' : `Seen ${formatLastSeen(activePartnerData?.lastSeenAt)}`}
+                              {getPresenceLabel(activePartnerData)}
                            </span>
                         </div>
                     </div>

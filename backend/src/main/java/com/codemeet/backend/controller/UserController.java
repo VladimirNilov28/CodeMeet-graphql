@@ -1,6 +1,7 @@
 package com.codemeet.backend.controller;
 
 import com.codemeet.backend.dto.BioDto;
+import com.codemeet.backend.dto.PrivacySettingsDto;
 import com.codemeet.backend.dto.ProfileDto;
 import com.codemeet.backend.dto.UserResponse;
 import com.codemeet.backend.dto.PublicUserDto;
@@ -30,6 +31,11 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api")
 public class UserController {
+    // Serves current-user and public-profile data while enforcing the profile visibility rules from the task.
+    private static final int MIN_BIO_AGE = 13;
+    private static final int MAX_BIO_AGE = 120;
+    private static final int MIN_RADIUS_KM = 1;
+    private static final int MAX_RADIUS_KM = 500;
     
     private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
@@ -46,7 +52,7 @@ public class UserController {
         this.connectionRepository = connectionRepository;
         this.recommendationService = recommendationService;
     }
-    // Core endpoints for fetching user data
+    // Core identity endpoints used across the app header, profile screens, and recommendation cards.
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser(Authentication authentication) {
 
@@ -66,7 +72,7 @@ public class UserController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
         }
 
-        return ResponseEntity.ok(mapToPublicDto(targetUser));
+        return ResponseEntity.ok(mapToPublicDto(targetUser, canBypassPrivacy(currentUser, targetUser)));
     }
 
     @GetMapping("/users/{id}/profile")
@@ -100,17 +106,10 @@ public class UserController {
         Bio bio = bioRepository.findByUser(targetUser)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Bio not set up yet"));
 
-        BioDto dto = new BioDto();
-        dto.setPrimaryLanguage(bio.getPrimaryLanguage());
-        dto.setExperienceLevel(bio.getExperienceLevel());
-        dto.setLookFor(bio.getLookFor());
-        dto.setPreferredOs(bio.getPreferredOs());
-        dto.setCodingStyle(bio.getCodingStyle());
-        dto.setCity(bio.getCity());
-        return ResponseEntity.ok(dto);
+        return ResponseEntity.ok(mapToBioDto(bio, canBypassPrivacy(currentUser, targetUser)));
     }
 
-    // profile endpoints
+    // Profile endpoints expose the free-text "About Me" content for the authenticated user.
 
     @GetMapping("/me/profile")
     public ResponseEntity<ProfileDto> getMyProfile(Authentication authentication) {
@@ -138,7 +137,7 @@ public class UserController {
         return ResponseEntity.ok("Profile updated successfully");
     }
 
-    // bio endpoints
+    // Bio endpoints expose the structured matching data that powers recommendations.
 
     @GetMapping("/me/bio")
     public ResponseEntity<BioDto> getMyBio(Authentication authentication) {
@@ -147,28 +146,47 @@ public class UserController {
         Bio bio = bioRepository.findByUser(user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Bio not set up yet"));
 
-        BioDto dto = new BioDto();
-        dto.setPrimaryLanguage(bio.getPrimaryLanguage());
-        dto.setExperienceLevel(bio.getExperienceLevel());
-        dto.setLookFor(bio.getLookFor());
-        dto.setPreferredOs(bio.getPreferredOs());
-        dto.setCodingStyle(bio.getCodingStyle());
-        dto.setCity(bio.getCity());
-        return ResponseEntity.ok(dto);
+        return ResponseEntity.ok(mapToBioDto(bio, true));
+    }
+
+    @GetMapping("/me/privacy")
+    public ResponseEntity<PrivacySettingsDto> getMyPrivacySettings(Authentication authentication) {
+        User user = getAuthenticatedUser(authentication);
+        return ResponseEntity.ok(mapToPrivacySettingsDto(user));
+    }
+
+    @PostMapping("/me/privacy")
+    public ResponseEntity<String> updateMyPrivacySettings(Authentication authentication, @RequestBody PrivacySettingsDto request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Privacy settings are required");
+        }
+
+        User user = getAuthenticatedUser(authentication);
+        user.setHideAvatar(request.isHideAvatar());
+        user.setHideLocation(request.isHideLocation());
+        user.setHideAge(request.isHideAge());
+        user.setHideLastSeen(request.isHideLastSeen());
+        userRepository.save(user);
+
+        return ResponseEntity.ok("Privacy settings updated successfully");
     }
 
     @PostMapping("/me/bio")
     public ResponseEntity<String> updateMyBio(Authentication authentication, @RequestBody BioDto request) {
         User user = getAuthenticatedUser(authentication);
+        validateBioRequest(request);
 
         Bio bio = bioRepository.findByUser(user).orElse(new Bio());
         bio.setUser(user);
-        bio.setPrimaryLanguage(request.getPrimaryLanguage());
-        bio.setExperienceLevel(request.getExperienceLevel());
-        bio.setLookFor(request.getLookFor());
-        bio.setPreferredOs(request.getPreferredOs());
-        bio.setCodingStyle(request.getCodingStyle());
-        bio.setCity(request.getCity());
+        bio.setPrimaryLanguage(normalizeText(request.getPrimaryLanguage()));
+        bio.setExperienceLevel(normalizeText(request.getExperienceLevel()));
+        bio.setLookFor(normalizeText(request.getLookFor()));
+        bio.setPreferredOs(normalizeText(request.getPreferredOs()));
+        bio.setCodingStyle(normalizeText(request.getCodingStyle()));
+        bio.setLatitude(request.getLatitude());
+        bio.setLongitude(request.getLongitude());
+        bio.setMaxDistanceKm(request.getMaxDistanceKm());
+        bio.setAge(request.getAge());
         bioRepository.save(bio);
 
         return ResponseEntity.ok("Bio updated successfully");
@@ -187,25 +205,126 @@ public class UserController {
         return ResponseEntity.ok("Alias updated successfully");
     }
 
-    // helpers
+    // Utility endpoints and helpers keep file upload and visibility logic in one place.
 
     @PostMapping("/me/profile-picture")
     public ResponseEntity<String> uploadProfilePicture(Authentication authentication, @RequestParam("file") MultipartFile file) {
         User user = getAuthenticatedUser(authentication);
+        String previousFileUrl = user.getProfilePicture();
 
         try {
             String fileUrl = fileService.saveFile(file);
             user.setProfilePicture(fileUrl);
             userRepository.save(user);
+            fileService.deleteFileByUrl(previousFileUrl);
             return ResponseEntity.ok("Profile picture updated successfully: " + fileUrl);
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload file");
         }
     }
 
+    @DeleteMapping("/me/profile-picture")
+    public ResponseEntity<String> removeProfilePicture(Authentication authentication) {
+        User user = getAuthenticatedUser(authentication);
+        String currentFileUrl = user.getProfilePicture();
+
+        if (currentFileUrl == null || currentFileUrl.isBlank()) {
+            return ResponseEntity.ok("Profile picture removed successfully");
+        }
+
+        try {
+            fileService.deleteFileByUrl(currentFileUrl);
+            user.setProfilePicture(null);
+            userRepository.save(user);
+            return ResponseEntity.ok("Profile picture removed successfully");
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to remove file");
+        }
+    }
+
     private User getAuthenticatedUser(Authentication authentication) {
         return userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+    }
+
+    private BioDto mapToBioDto(Bio bio, boolean includePrivateFields) {
+        BioDto dto = new BioDto();
+        dto.setPrimaryLanguage(bio.getPrimaryLanguage());
+        dto.setExperienceLevel(bio.getExperienceLevel());
+        dto.setLookFor(bio.getLookFor());
+        dto.setPreferredOs(bio.getPreferredOs());
+        dto.setCodingStyle(bio.getCodingStyle());
+        dto.setLatitude(includePrivateFields ? bio.getLatitude() : null);
+        dto.setLongitude(includePrivateFields ? bio.getLongitude() : null);
+        dto.setLocationVisible(includePrivateFields || !bio.getUser().isHideLocation());
+        dto.setMaxDistanceKm(dto.isLocationVisible() || includePrivateFields ? bio.getMaxDistanceKm() : null);
+        dto.setAgeVisible(includePrivateFields || !bio.getUser().isHideAge());
+        dto.setAge(dto.isAgeVisible() || includePrivateFields ? bio.getAge() : null);
+        return dto;
+    }
+
+    private PrivacySettingsDto mapToPrivacySettingsDto(User user) {
+        PrivacySettingsDto dto = new PrivacySettingsDto();
+        dto.setHideAvatar(user.isHideAvatar());
+        dto.setHideLocation(user.isHideLocation());
+        dto.setHideAge(user.isHideAge());
+        dto.setHideLastSeen(user.isHideLastSeen());
+        return dto;
+    }
+
+    private void validateBioRequest(BioDto request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bio is required");
+        }
+
+        requireBioValue(request.getPrimaryLanguage(), "Primary language");
+        requireBioValue(request.getExperienceLevel(), "Experience level");
+        requireBioValue(request.getLookFor(), "Looking for");
+        requireBioValue(request.getPreferredOs(), "Preferred OS");
+        requireBioValue(request.getCodingStyle(), "Coding style");
+
+        Double latitude = request.getLatitude();
+        Double longitude = request.getLongitude();
+        Integer maxDistanceKm = request.getMaxDistanceKm();
+
+        if (latitude == null || longitude == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GPS coordinates are required");
+        }
+        if (latitude < -90 || latitude > 90) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Latitude must be between -90 and 90");
+        }
+        if (longitude < -180 || longitude > 180) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Longitude must be between -180 and 180");
+        }
+        if (maxDistanceKm == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Search radius is required");
+        }
+        if (maxDistanceKm < MIN_RADIUS_KM || maxDistanceKm > MAX_RADIUS_KM) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Search radius must be between " + MIN_RADIUS_KM + " and " + MAX_RADIUS_KM + " km");
+        }
+
+        Integer age = request.getAge();
+        if (age == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Age is required");
+        }
+        if (age < MIN_BIO_AGE || age > MAX_BIO_AGE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Age must be between " + MIN_BIO_AGE + " and " + MAX_BIO_AGE);
+        }
+    }
+
+    private void requireBioValue(String value, String fieldName) {
+        if (normalizeText(value) == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
+        }
+    }
+
+    private String normalizeText(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private boolean canViewProfile(User current, User target) {
@@ -215,6 +334,10 @@ public class UserController {
 
         if (current.getId().equals(target.getId())) {
             return true;
+        }
+
+        if (recommendationService.isBlockedEitherDirection(current, target)) {
+            return false;
         }
 
         Optional<Connection> connection = connectionRepository.findAllConnectionsBetweenUsers(current, target);
@@ -233,13 +356,19 @@ public class UserController {
         return response;
     }
 
-    private PublicUserDto mapToPublicDto(User user) {
+    private PublicUserDto mapToPublicDto(User user, boolean includePrivateFields) {
         PublicUserDto dto = new PublicUserDto();
         dto.setId(user.getId());
         dto.setName(resolveDisplayName(user));
-        dto.setProfilePicture(user.getProfilePicture());
-        dto.setLastSeenAt(user.getLastSeenAt());
+        dto.setAvatarVisible(includePrivateFields || !user.isHideAvatar());
+        dto.setProfilePicture(dto.isAvatarVisible() ? user.getProfilePicture() : null);
+        dto.setLastSeenVisible(includePrivateFields || !user.isHideLastSeen());
+        dto.setLastSeenAt(dto.isLastSeenVisible() ? user.getLastSeenAt() : null);
         return dto;
+    }
+
+    private boolean canBypassPrivacy(User viewer, User target) {
+        return viewer.getRole() == User.Role.ADMIN || viewer.getId().equals(target.getId());
     }
 
     private String resolveDisplayName(User user) {

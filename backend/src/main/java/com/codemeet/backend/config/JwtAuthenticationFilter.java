@@ -17,6 +17,7 @@ import java.util.Collections;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    // Reads bearer tokens from incoming requests and hydrates Spring Security with the authenticated user.
     private final JwtService jwtService;
 
     public JwtAuthenticationFilter (JwtService jwtService) {
@@ -32,21 +33,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         final String authHeader = request.getHeader("Authorization");
 
-        //  If there is no token, just pass it along (SecurityConfig will block it if it's a protected route)
+        // Public routes can continue without a token; protected routes will still be enforced later by SecurityConfig.
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        final String jwt = authHeader.substring(7); // Remove "Bearer " prefix
+        final String jwt = authHeader.substring(7); // Strip the standard bearer prefix before validating the token.
 
         try {
             final String userEmail = jwtService.extractEmail(jwt);
 
-        // if we have an email and the user is not authenticated yet
+        // Avoid rebuilding the authentication object when another filter has already authenticated the request.
             if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 if (jwtService.isTokenValid(jwt)) {
-                    // Tell Spring Security that the user is legit.
+                    // Mirror the role embedded in the JWT so authorization checks can use ROLE_* authorities.
                     String role = jwtService.extractRole(jwt);
 
                     SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + role);
@@ -60,7 +61,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception e) {
-            //Malformed token, expired token, or other issues will be caught here. We can log it if needed, but we'll just ignore it and let the request fail if it's invalid.
+            // Invalid or expired tokens are ignored here so the request can fail naturally on protected endpoints.
         }
         filterChain.doFilter(request, response);
     }
