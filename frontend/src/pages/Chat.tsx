@@ -49,6 +49,8 @@ type ChatPartnerSummary = {
    id: string;
    name: string;
    unreadCount: number;
+   profilePicture?: string;
+   lastSeenVisible?: boolean;
 };
 
 type UserSummary = {
@@ -286,7 +288,7 @@ const Chat: React.FC = () => {
             }),
          );
 
-         const presenceMapRes = await api.get<Record<string, PresenceStatus>>('/chat/presence').catch(() => ({ data: {} }));
+         const presenceMapRes = await api.get<Record<string, PresenceStatus>>('/chat/presence').catch(() => ({ data: {} as Record<string, PresenceStatus> }));
          const presenceMap = presenceMapRes.data || {};
 
          const partnersWithPresence = enhancedPartners.map((partner) => ({
@@ -638,8 +640,8 @@ const Chat: React.FC = () => {
                 <div className="p-8 text-center text-zinc-600 text-sm">No active conversations</div>
             ) : (
                 partners.map(p => (
-                   <div 
-                      key={p.id} 
+                   <div
+                      key={p.id}
                       onClick={() => navigate(`/chat/${p.id}`)}
                       className={`group p-3 rounded-2xl flex items-center cursor-pointer transition-all duration-200 border border-transparent ${partnerId === p.id ? 'bg-indigo-600/10 border-indigo-500/20 shadow-sm' : 'hover:bg-zinc-800/50 hover:border-white/5'}`}
                    >
@@ -714,14 +716,14 @@ const Chat: React.FC = () => {
                        </button>
                        <div className="relative">
                            <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden border border-white/10 shadow-md">
-                               {activePartnerData?.profilePicture ? 
-                                 <img src={`${BACKEND_BASE_URL}${activePartnerData.profilePicture}`} className="w-full h-full object-cover"/> : 
+                               {activePartnerData?.profilePicture ?
+                                 <img src={`${BACKEND_BASE_URL}${activePartnerData.profilePicture}`} className="w-full h-full object-cover"/> :
                                  <div className="w-full h-full flex items-center justify-center text-zinc-500"><IconUser className="w-5 h-5" /></div>
                                }
                            </div>
                            {activePartnerData?.online && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border border-zinc-900 rounded-full"></div>}
                        </div>
-                       
+
                         <div className="flex flex-col">
                            <h3 className="text-zinc-100 font-bold text-base tracking-wide flex items-center gap-2">
                               {activePartnerData?.name || 'Loading...'}
@@ -785,23 +787,23 @@ const Chat: React.FC = () => {
                        {filteredMessages.map((m, idx) => {
                               const isOwn = m.senderId === currentUserId;
                           const isSequence = idx > 0 && filteredMessages[idx-1].senderId === m.senderId;
-                              
+
                               return (
                                  <div key={m.id} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'} group animate-fade-in`}>
                                {!isOwn && !isSequence && (
                                   <div className="w-8 h-8 rounded-full bg-zinc-800 border border-white/5 flex-shrink-0 mr-2 overflow-hidden self-end mb-1 shadow-sm">
-                                      {activePartnerData?.profilePicture ? 
-                                       <img src={`${BACKEND_BASE_URL}${activePartnerData.profilePicture}`} className="w-full h-full object-cover"/> : 
+                                      {activePartnerData?.profilePicture ?
+                                       <img src={`${BACKEND_BASE_URL}${activePartnerData.profilePicture}`} className="w-full h-full object-cover"/> :
                                        <div className="w-full h-full flex items-center justify-center text-xs opacity-50"><IconUser className="w-4 h-4" /></div>
                                       }
                                   </div>
                                )}
                                {!isOwn && isSequence && <div className="w-10"></div>}
-                               
+
                                <div className={`max-w-[70%] relative ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
                                    <div className={`px-5 py-3 text-sm shadow-md backdrop-blur-sm border ${
-                                      isOwn 
-                                         ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm border-indigo-500/20' 
+                                      isOwn
+                                         ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm border-indigo-500/20'
                                          : 'bg-zinc-800/80 text-zinc-100 rounded-2xl rounded-tl-sm border-white/5'
                                    } transition-all hover:shadow-lg`}>
                                       {m.attachmentUrl && /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(m.attachmentUrl) ? (
@@ -851,7 +853,7 @@ const Chat: React.FC = () => {
                            </div>
                         );
                     })}
-                    
+
                     {isPartnerTyping && (
                        <div className="flex w-full justify-start items-center gap-3 pl-10 animate-pulse">
                           <div className="bg-zinc-800/50 px-4 py-2 rounded-full border border-white/5 flex gap-1 items-center">
@@ -862,7 +864,7 @@ const Chat: React.FC = () => {
                           <span className="text-xs text-zinc-500 font-medium">Typing...</span>
                        </div>
                     )}
-                    
+
                         <div ref={messagesEndRef} className="h-4" />
                        </div>
                     )}
@@ -888,8 +890,8 @@ const Chat: React.FC = () => {
                        <IconPaperclip className="w-5 h-5" />
                     </button>
                     <div className="flex-1 bg-zinc-800/50 rounded-2xl border border-zinc-700/50 focus-within:border-indigo-500/50 focus-within:bg-zinc-800 transition-all flex items-center shadow-inner">
-                       <input 
-                          type="text" 
+                       <input
+                          type="text"
                           value={newMessage}
                           onChange={(e) => handleMessageInput(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && (pendingFile ? handleSendAttachment() : handleSendMessage())}
@@ -898,7 +900,7 @@ const Chat: React.FC = () => {
                           autoFocus
                        />
                     </div>
-                    <button 
+                    <button
                        onClick={pendingFile ? handleSendAttachment : handleSendMessage}
                        disabled={uploading || (!pendingFile && !newMessage.trim())}
                        className="p-3 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-500 hover:scale-105 transition-all active:scale-95 flex items-center justify-center h-[50px] w-[50px]"
