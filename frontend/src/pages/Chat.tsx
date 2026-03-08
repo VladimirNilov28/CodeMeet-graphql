@@ -1,11 +1,15 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import api from '../api/axios';
+import FeedbackBanner from '../components/FeedbackBanner.tsx';
 import { IconEdit, IconMore, IconUser, IconMessage, IconSearch, IconInfo, IconPaperclip, IconSend, IconX } from '../components/Icons';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 const BACKEND_BASE_URL = import.meta.env.VITE_WS_BASE_URL || API_BASE_URL.replace(/\/api\/?$/, '');
+const TYPING_RENEW_INTERVAL_MS = 1000;
+const TYPING_IDLE_TIMEOUT_MS = 1200;
+const TYPING_INDICATOR_HIDE_DELAY_MS = 2000;
 
 type ChatPartner = {
   id: string;
@@ -14,6 +18,7 @@ type ChatPartner = {
   unreadCount: number;
    online?: boolean;
    lastSeenAt?: string | null;
+   lastSeenVisible?: boolean;
 };
 
 type Message = {
@@ -37,21 +42,51 @@ type PresenceEvent = {
    userId: string;
    online: boolean;
    lastSeenAt?: string | null;
+   lastSeenVisible?: boolean;
+};
+
+type ChatPartnerSummary = {
+   id: string;
+   name: string;
+   unreadCount: number;
+   profilePicture?: string;
+   lastSeenVisible?: boolean;
+};
+
+type UserSummary = {
+   id: string;
+   name: string;
+   profilePicture?: string;
+   lastSeenAt?: string | null;
+   lastSeenVisible?: boolean;
+};
+
+type PresenceStatus = {
+   online?: boolean;
+   lastSeenAt?: string | null;
+   lastSeenVisible?: boolean;
+};
+
+type PaginatedResponse<T> = {
+   content?: T[];
 };
 
 const sortMessagesAsc = (items: Message[]) => {
    return [...items].sort((a, b) => {
       const dateA = new Date(a.timestamp);
       const dateB = new Date(b.timestamp);
-      // Handle invalid dates by pushing them to the end
-      const ta = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
-      const tb = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
-      
-      if (ta !== tb) return ta - tb;
-      // Secondary sort by ID if timestamps are identical
+      const ta = Number.isNaN(dateA.getTime()) ? 0 : dateA.getTime();
+      const tb = Number.isNaN(dateB.getTime()) ? 0 : dateB.getTime();
+
+      if (ta !== tb) {
+         return ta - tb;
+      }
+
       return (a.id || '').localeCompare(b.id || '');
    });
 };
+
+const getRoutePartnerId = () => window.location.pathname.split('/').pop() || '';
 
 const Chat: React.FC = () => {
   const { partnerId } = useParams<{ partnerId: string }>();
@@ -68,10 +103,13 @@ const Chat: React.FC = () => {
    const [isEditMode, setIsEditMode] = useState(false);
    const [pendingFile, setPendingFile] = useState<File | null>(null);
    const [uploading, setUploading] = useState(false);
-  
+   const [blockingPartner, setBlockingPartner] = useState(false);
+   const [actionError, setActionError] = useState<string | null>(null);
+   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activePartnerData, setActivePartnerData] = useState<ChatPartner | null>(null);
-  
+
   const stompClient = useRef<Client | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
    const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -79,9 +117,197 @@ const Chat: React.FC = () => {
    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
    const typingIndicatorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
    const typingStateRef = useRef(false);
+   const lastTypingSentAtRef = useRef(0);
 
+   const loadPartnerData = useCallback(async (targetId: string): Promise<ChatPartner | null> => {
+      try {
+         const detail = await api.get<UserSummary>(`/users/${targetId}`);
+         return {
+            id: detail.data.id,
+            name: detail.data.name,
+            profilePicture: detail.data.profilePicture,
+            unreadCount: 0,
+            online: false,
+            lastSeenAt: detail.data.lastSeenAt || null,
+            lastSeenVisible: detail.data.lastSeenVisible !== false,
+         };
+      } catch {
+         return null;
+      }
+   }, []);
+
+   const fetchChatHistory = useCallback(async (targetId: string) => {
+      try {
+         const res = await api.get<PaginatedResponse<Message>>(`/chat/history/${targetId}?size=50`);
+         const content = Array.isArray(res.data?.content) ? res.data.content : [];
+         setMessages(sortMessagesAsc(content));
+      } catch (error) {
+         console.error('Failed to fetch chat history', error);
+      }
+   }, []);
+
+   const markAsRead = useCallback(async (senderId: string) => {
+      try {
+         await api.post(`/chat/read/${senderId}`);
+         setPartners((prev) => prev.map((partner) => (partner.id === senderId ? { ...partner, unreadCount: 0 } : partner)));
+      } catch {
+         console.warn('Silent fail: unread state logic');
+      }
+   }, []);
+
+   const connectWebSocket = useCallback((userId: string) => {
+      if (stompClient.current) {
+         stompClient.current.deactivate();
+         stompClient.current = null;
+      }
+
+      const token = localStorage.getItem('token');
+      const wsUrl = BACKEND_BASE_URL.replace(/^http/, 'ws') + '/ws';
+
+      const client = new Client({
+         brokerURL: wsUrl,
+         connectHeaders: {
+            Authorization: `Bearer ${token}`,
+         },
+         debug: (message) => {
+            console.log(`STOMP: ${message}`);
+         },
+         reconnectDelay: 5000,
+         onConnect: () => {
+            console.log('STOMP Connected');
+
+            client.subscribe('/user/queue/messages', (msg) => {
+               const incomingMessage: Message = JSON.parse(msg.body);
+
+               setMessages((prevMessages) => {
+                  if (prevMessages.some((message) => message.id === incomingMessage.id)) {
+                     return prevMessages;
+                  }
+
+                  const currentPathId = getRoutePartnerId();
+                  const isRelevant =
+                     (incomingMessage.senderId === currentPathId && incomingMessage.recipientId === userId) ||
+                     (incomingMessage.senderId === userId && incomingMessage.recipientId === currentPathId);
+
+                  return isRelevant ? sortMessagesAsc([...prevMessages, incomingMessage]) : prevMessages;
+               });
+
+               setPartners((prev) => {
+                  const partnerIdToFind = incomingMessage.senderId === userId ? incomingMessage.recipientId : incomingMessage.senderId;
+                  const partnerIndex = prev.findIndex((partner) => partner.id === partnerIdToFind);
+                  const currentActiveId = getRoutePartnerId();
+                  const isTargetingUsAndNotActive = incomingMessage.senderId !== userId && currentActiveId !== partnerIdToFind;
+
+                  if (partnerIndex === -1) {
+                     void loadPartnerData(partnerIdToFind).then((partner) => {
+                        if (!partner) {
+                           return;
+                        }
+
+                        setPartners((existing) => (existing.some((item) => item.id === partner.id) ? existing : [partner, ...existing]));
+                     });
+                     return prev;
+                  }
+
+                  const nextPartners = [...prev];
+                  const [targetPartner] = nextPartners.splice(partnerIndex, 1);
+
+                  if (isTargetingUsAndNotActive) {
+                     targetPartner.unreadCount = (targetPartner.unreadCount || 0) + 1;
+                  } else if (incomingMessage.senderId === partnerIdToFind && currentActiveId === partnerIdToFind) {
+                     void api.post(`/chat/read/${partnerIdToFind}`).catch(() => undefined);
+                  }
+
+                  return [targetPartner, ...nextPartners];
+               });
+            });
+
+            client.subscribe('/user/queue/typing', (msg) => {
+               const typingEvent: TypingEvent = JSON.parse(msg.body);
+               const activePartnerId = getRoutePartnerId();
+
+               if (!activePartnerId || typingEvent.senderId.toLowerCase() !== activePartnerId.toLowerCase()) {
+                  return;
+               }
+
+               setIsPartnerTyping(typingEvent.typing);
+               if (typingIndicatorTimeoutRef.current) {
+                  clearTimeout(typingIndicatorTimeoutRef.current);
+               }
+               if (typingEvent.typing) {
+                  typingIndicatorTimeoutRef.current = setTimeout(() => setIsPartnerTyping(false), TYPING_INDICATOR_HIDE_DELAY_MS);
+               }
+            });
+
+            client.subscribe('/user/queue/presence', (msg) => {
+               const presenceEvent: PresenceEvent = JSON.parse(msg.body);
+               setPartners((prev) =>
+                  prev.map((partner) =>
+                     partner.id === presenceEvent.userId
+                        ? {
+                              ...partner,
+                              online: presenceEvent.online,
+                              lastSeenAt: presenceEvent.lastSeenAt ?? (presenceEvent.lastSeenVisible === false ? null : partner.lastSeenAt),
+                              lastSeenVisible: presenceEvent.lastSeenVisible !== false,
+                           }
+                        : partner,
+                  ),
+               );
+            });
+         },
+         onStompError: (frame) => {
+            console.error(`Broker reported error: ${frame.headers.message}`);
+         },
+      });
+
+      client.activate();
+      stompClient.current = client;
+   }, [loadPartnerData]);
+
+   const fetchInitialData = useCallback(async () => {
+      try {
+         const [userRes, partnersRes] = await Promise.all([
+            api.get<UserSummary>('/me'),
+            api.get<ChatPartnerSummary[]>('/chat/partners'),
+         ]);
+
+         setCurrentUserId(userRes.data.id);
+
+         const enhancedPartners = await Promise.all(
+            partnersRes.data.map(async (partner) => {
+               try {
+                  const detail = await api.get<UserSummary>(`/users/${partner.id}`);
+                  return {
+                     ...partner,
+                     profilePicture: detail.data?.profilePicture,
+                     lastSeenVisible: detail.data?.lastSeenVisible !== false,
+                  };
+               } catch {
+                  return partner;
+               }
+            }),
+         );
+
+         const presenceMapRes = await api.get<Record<string, PresenceStatus>>('/chat/presence').catch(() => ({ data: {} as Record<string, PresenceStatus> }));
+         const presenceMap = presenceMapRes.data || {};
+
+         const partnersWithPresence = enhancedPartners.map((partner) => ({
+            ...partner,
+            online: Boolean(presenceMap[partner.id]?.online),
+            lastSeenAt: presenceMap[partner.id]?.lastSeenAt || null,
+            lastSeenVisible: presenceMap[partner.id]?.lastSeenVisible !== false && partner.lastSeenVisible !== false,
+         }));
+
+         setPartners(partnersWithPresence);
+         connectWebSocket(userRes.data.id);
+      } catch (error) {
+         console.error('Core chat bootstrap failed', error);
+      }
+   }, [connectWebSocket]);
+
+   // Bootstrap chat data once, then clean up timers and the socket when the page closes.
   useEffect(() => {
-    fetchInitialData();
+      void fetchInitialData();
 
       return () => {
          if (typingTimeoutRef.current) {
@@ -92,9 +318,8 @@ const Chat: React.FC = () => {
          }
          stompClient.current?.deactivate();
       };
-  }, []);
+   }, [fetchInitialData]);
 
-   // Re-render every minute so "last seen" labels stay fresh without page reload
    useEffect(() => {
       const id = setInterval(() => {
          setLastSeenTick(Date.now());
@@ -104,314 +329,188 @@ const Chat: React.FC = () => {
    }, []);
 
    useEffect(() => {
-      if (partnerId && currentUserId) {
-          fetchChatHistory(partnerId);
-          markAsRead(partnerId);
-          setIsPartnerTyping(false);
-      } else {
-          setMessages([]);
-          setIsPartnerTyping(false);
-      }
-   }, [partnerId, currentUserId]);
+      const handleBlocked = (event: Event) => {
+         const customEvent = event as CustomEvent<{ id: string; name?: string }>;
+         const blockedId = customEvent.detail?.id;
+         if (!blockedId) {
+            return;
+         }
 
-      // Keep active partner header in sync
+         setPartners((prev) => prev.filter((partner) => partner.id !== blockedId));
+
+         if (partnerId === blockedId) {
+            setActionSuccess(`${customEvent.detail?.name || 'User'} was blocked successfully.`);
+            setActivePartnerData(null);
+            setMessages([]);
+            setIsPartnerTyping(false);
+            setTimeout(() => navigate('/chat'), 1200);
+         }
+      };
+
+      window.addEventListener('codemeet:user-blocked', handleBlocked as EventListener);
+      return () => window.removeEventListener('codemeet:user-blocked', handleBlocked as EventListener);
+   }, [navigate, partnerId]);
+
+   useEffect(() => {
+      if (partnerId && currentUserId) {
+         void fetchChatHistory(partnerId);
+         void markAsRead(partnerId);
+         setIsPartnerTyping(false);
+         return;
+      }
+
+      setMessages([]);
+      setIsPartnerTyping(false);
+   }, [currentUserId, fetchChatHistory, markAsRead, partnerId]);
+
+   // Keep the selected conversation details in sync with the sidebar.
    useEffect(() => {
       if (!partnerId) {
          setActivePartnerData(null);
          return;
       }
 
-      // Re-fetch history when switching partners to ensure we have the latest state
-      fetchChatHistory(partnerId);
-
-      const existingPartner = partners.find((p) => p.id === partnerId);
+      const existingPartner = partners.find((partner) => partner.id === partnerId);
       if (existingPartner) {
          setActivePartnerData(existingPartner);
          return;
       }
-      
-      setupActivePartnerData(partnerId);
-   }, [partnerId, partners]);
 
-  // Keep chat scrolled to the latest message
-  useEffect(() => {
+      void loadPartnerData(partnerId).then((partner) => {
+         if (!partner) {
+            return;
+         }
+
+         setActivePartnerData(partner);
+         setPartners((prev) => (prev.some((item) => item.id === partner.id) ? prev : [partner, ...prev]));
+      });
+   }, [loadPartnerData, partnerId, partners]);
+
+   useEffect(() => {
       const scrollToLatest = () => {
          if (messagesContainerRef.current) {
             messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
          }
       };
 
-      // Wait one frame so DOM height is finalized
       requestAnimationFrame(scrollToLatest);
    }, [messages, partnerId]);
 
-  const fetchInitialData = async () => {
-    try {
-      const [userRes, partnersRes] = await Promise.all([
-        api.get('/me'),
-        api.get('/chat/partners')
-      ]);
-      setCurrentUserId(userRes.data.id);
-      
-      // The backend returns a list of {id, name, unreadCount}. 
-      // Need overfetch to get profilePictures
-      const enhancedPartners = await Promise.all(
-         partnersRes.data.map(async (p: any) => {
-            try {
-               const detail = await api.get(`/users/${p.id}`);
-               return { ...p, profilePicture: detail.data?.profilePicture };
-            } catch {
-               return p;
-            }
-         })
-      );
-
-         const presenceMapRes = await api.get('/chat/presence').catch(() => ({ data: {} }));
-         const presenceMap = presenceMapRes.data || {};
-
-         const partnersWithPresence = enhancedPartners.map((p: ChatPartner) => ({
-            ...p,
-            online: Boolean(presenceMap[p.id]?.online),
-            lastSeenAt: presenceMap[p.id]?.lastSeenAt || null
-         }));
-
-         setPartners(partnersWithPresence);
-
-      // Startup STOMP Connection
-      connectWebSocket(userRes.data.id);
-
-    } catch (err) {
-      console.error('Core chat bootstrap failed', err);
-    }
-  };
-
-  const setupActivePartnerData = async (targetId: string) => {
-      let p = partners.find(p => p.id === targetId);
-      if (!p) {
-         try {
-             const detail = await api.get(`/users/${targetId}`);
-             p = {
-                id: detail.data.id,
-                name: detail.data.name,
-                profilePicture: detail.data.profilePicture,
-               unreadCount: 0,
-                      online: false,
-                      lastSeenAt: detail.data.lastSeenAt || null
-             };
-             // Add securely to partners list if initiated via outside route
-             setPartners(prev => {
-                if(prev.find(x => x.id === targetId)) return prev;
-                return [p!, ...prev];
-             });
-         } catch {
-             return; // failed to load partner
-         }
-      }
-      setActivePartnerData(p || null);
-  };
-
-  const fetchChatHistory = async (targetId: string) => {
-     try {
-       const res = await api.get(`/chat/history/${targetId}?size=50`);
-          const content = Array.isArray(res.data?.content) ? res.data.content : [];
-          setMessages(sortMessagesAsc(content));
-     } catch (err) {
-       console.error('Failed to fetch chat history', err);
-     }
-  };
-
-  const markAsRead = async (senderId: string) => {
-      try {
-         await api.post(`/chat/read/${senderId}`);
-         setPartners(prev => prev.map(p => p.id === senderId ? { ...p, unreadCount: 0 } : p));
-      } catch (err) {
-         console.warn('Silent fail: unread state logic');
-      }
-  };
-
-  const connectWebSocket = (uId: string) => {
-      if (stompClient.current) {
-         stompClient.current.deactivate();
-         stompClient.current = null;
-      }
-
-    // STOMP over Standard WebSocket
-    const token = localStorage.getItem('token');
-    
-    // Convert HTTP URL to WS URL
-    const wsUrl = BACKEND_BASE_URL.replace(/^http/, 'ws') + '/ws';
-    
-    const client = new Client({
-      brokerURL: wsUrl,
-      
-      // Pass the JWT so simple Stomp authorization interceptor works.
-      connectHeaders: {
-         Authorization: `Bearer ${token}`
-      },
-      // Debug logging
-      debug: (str) => {
-        console.log('STOMP: ' + str);
-      },
-      reconnectDelay: 5000,
-      
-      onConnect: () => {
-         console.log('STOMP Connected');
-         // Subscribe to private user queue
-         client.subscribe('/user/queue/messages', (msg) => {
-            const incomingMessage: Message = JSON.parse(msg.body);
-            
-            // Append message if it belongs to the open chat
-            setMessages((prevMsg) => {
-               if (prevMsg.find(m => m.id === incomingMessage.id)) return prevMsg;
-               
-               // Read partnerId from URL to avoid stale closure
-               const currentPathId = window.location.pathname.split('/').pop() || '';
-               
-               const isRelevant = 
-                  (incomingMessage.senderId === currentPathId && incomingMessage.recipientId === uId) ||
-                  (incomingMessage.senderId === uId && incomingMessage.recipientId === currentPathId);
-
-               if (isRelevant) {
-                   return sortMessagesAsc([...prevMsg, incomingMessage]);
-               }
-               return prevMsg;
-            });
-
-            // Update partner list ordering and read counters
-            setPartners((prev) => {
-               const partnerIdToFind = incomingMessage.senderId === uId ? incomingMessage.recipientId : incomingMessage.senderId;
-               let partnerIndex = prev.findIndex(p => p.id === partnerIdToFind);
-               let currentActiveId = window.location.pathname.split('/').pop() || '';
-               
-               const isTargetingUsAndNotActive = incomingMessage.senderId !== uId && currentActiveId !== partnerIdToFind;
-               
-               if (partnerIndex === -1) {
-                  fetchInitialData(); 
-                  return prev;
-               }
-
-               const pArray = [...prev];
-               const targetPartner = pArray.splice(partnerIndex, 1)[0];
-               
-               if (isTargetingUsAndNotActive) {
-                   targetPartner.unreadCount = (targetPartner.unreadCount || 0) + 1;
-               } else if (incomingMessage.senderId === partnerIdToFind && currentActiveId === partnerIdToFind) {
-                   // Message received from active screen, silently mark as read
-                   api.post(`/chat/read/${partnerIdToFind}`).catch(() => {});
-               }
-
-               // Lift partner to top (Push to Unshift)
-               return [targetPartner, ...pArray];
-            });
-         });
-
-            client.subscribe('/user/queue/typing', (msg) => {
-                  const typingEvent: TypingEvent = JSON.parse(msg.body);
-                  const activePartnerId = window.location.pathname.split('/').pop() || '';
-                  
-                  // Normalize comparison to handle case sensitivity if needed
-                  if (!activePartnerId || typingEvent.senderId.toLowerCase() !== activePartnerId.toLowerCase()) {
-                     return;
-                  }
-
-                  setIsPartnerTyping(typingEvent.typing);
-                  if (typingIndicatorTimeoutRef.current) {
-                     clearTimeout(typingIndicatorTimeoutRef.current);
-                  }
-                  if (typingEvent.typing) {
-                     typingIndicatorTimeoutRef.current = setTimeout(() => setIsPartnerTyping(false), 2000);
-                  }
-             });
-
-            client.subscribe('/user/queue/presence', (msg) => {
-                  const presenceEvent: PresenceEvent = JSON.parse(msg.body);
-                  setPartners((prev) => prev.map((p) => (
-                     p.id === presenceEvent.userId
-                  ? { ...p, online: presenceEvent.online, lastSeenAt: presenceEvent.lastSeenAt ?? p.lastSeenAt }
-                        : p
-                  )));
-             });
-      },
-      onStompError: (frame) => {
-        console.error('Broker reported error: ' + frame.headers['message']);
-      },
-    });
-
-    client.activate();
-    stompClient.current = client;
-  };
-
   const handleSendMessage = () => {
-      if (!newMessage.trim() || !partnerId || !currentUserId) return;
+      if (!newMessage.trim() || !partnerId || !currentUserId) {
+         return;
+      }
 
       const chatMessage = {
-          recipientId: partnerId,
-          content: newMessage
+         recipientId: partnerId,
+         content: newMessage,
       };
 
-      if (stompClient.current && stompClient.current.connected) {
+      if (stompClient.current?.connected) {
          stompClient.current.publish({
-            destination: '/app/chat', // Controller MessageMapping
-            body: JSON.stringify(chatMessage)
+            destination: '/app/chat',
+            body: JSON.stringify(chatMessage),
          });
       } else {
-         // Fallback to REST HTTP Post
-         api.post(`/chat/send/${partnerId}`, { content: newMessage })
+         api.post<Message>(`/chat/send/${partnerId}`, { content: newMessage })
             .then((res) => {
-               // Manually add the message to the list if successful
                if (res.data) {
-                  setMessages((prevMsg) => sortMessagesAsc([...prevMsg, res.data]));
+                  setMessages((prevMessages) => sortMessagesAsc([...prevMessages, res.data]));
                }
             })
-            .catch(err => {
-             console.error('Fallback send error', err);
-         });
+            .catch((error) => {
+               console.error('Fallback send error', error);
+            });
       }
 
       setNewMessage('');
-         sendTyping(false);
+      sendTyping(false);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) setPendingFile(file);
+      if (file) {
+         setPendingFile(file);
+      }
       e.target.value = '';
   };
 
   const handleSendAttachment = async () => {
-      if (!pendingFile || !partnerId) return;
+      if (!pendingFile || !partnerId) {
+         return;
+      }
+
       setUploading(true);
       try {
-          const formData = new FormData();
-          formData.append('file', pendingFile);
-          formData.append('content', newMessage.trim() || pendingFile.name);
-          const res = await api.post(`/chat/upload/${partnerId}`, formData, {
-              headers: { 'Content-Type': 'multipart/form-data' },
-          });
-          if (res.data) {
-              setMessages((prev) => sortMessagesAsc([...prev, res.data]));
-          }
-          setPendingFile(null);
-          setNewMessage('');
-      } catch (err) {
-          console.error('Attachment upload failed', err);
+         const formData = new FormData();
+         formData.append('file', pendingFile);
+         formData.append('content', newMessage.trim() || pendingFile.name);
+         const res = await api.post<Message>(`/chat/upload/${partnerId}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+         });
+         if (res.data) {
+            setMessages((prev) => sortMessagesAsc([...prev, res.data]));
+         }
+         setPendingFile(null);
+         setNewMessage('');
+      } catch (error) {
+         console.error('Attachment upload failed', error);
       } finally {
-          setUploading(false);
+         setUploading(false);
       }
   };
+
+   const handleBlockPartner = async () => {
+      if (!partnerId || !activePartnerData || blockingPartner) {
+         return;
+      }
+
+      try {
+         setBlockingPartner(true);
+         setActionError(null);
+         setActionSuccess(null);
+         await api.post(`/block/${partnerId}`);
+         window.dispatchEvent(new CustomEvent('codemeet:user-blocked', {
+            detail: { id: partnerId, name: activePartnerData.name },
+         }));
+         setActionSuccess(`${activePartnerData.name} was blocked successfully.`);
+         setPartners((prev) => prev.filter((partner) => partner.id !== partnerId));
+         setIsMenuOpen(false);
+         setTimeout(() => {
+            setActivePartnerData(null);
+            setMessages([]);
+            setIsPartnerTyping(false);
+            navigate('/chat');
+         }, 1200);
+      } catch (error) {
+         console.error('Failed to block user', error);
+         setActionError('Could not block this user right now.');
+      } finally {
+         setBlockingPartner(false);
+      }
+   };
 
    const sendTyping = (typing: boolean) => {
       if (!partnerId || !stompClient.current?.connected) {
          return;
       }
-      if (typingStateRef.current === typing) {
+
+      // Throttle repeated "typing=true" events so we do not publish on every keystroke.
+      const now = Date.now();
+      const isDuplicateTrue =
+         typing &&
+         typingStateRef.current === true &&
+         now - lastTypingSentAtRef.current < TYPING_RENEW_INTERVAL_MS;
+
+      if ((!typing && typingStateRef.current === false) || isDuplicateTrue) {
          return;
       }
 
       typingStateRef.current = typing;
+      lastTypingSentAtRef.current = now;
       stompClient.current.publish({
          destination: '/app/chat/typing',
-         body: JSON.stringify({ recipientId: partnerId, typing })
+         body: JSON.stringify({ recipientId: partnerId, typing }),
       });
    };
 
@@ -426,13 +525,14 @@ const Chat: React.FC = () => {
          if (typingTimeoutRef.current) {
             clearTimeout(typingTimeoutRef.current);
          }
-         typingTimeoutRef.current = setTimeout(() => sendTyping(false), 1200);
-      } else {
-         if (typingTimeoutRef.current) {
-            clearTimeout(typingTimeoutRef.current);
-         }
-         sendTyping(false);
+         typingTimeoutRef.current = setTimeout(() => sendTyping(false), TYPING_IDLE_TIMEOUT_MS);
+         return;
       }
+
+      if (typingTimeoutRef.current) {
+         clearTimeout(typingTimeoutRef.current);
+      }
+      sendTyping(false);
    };
 
    const formatLastSeen = (lastSeenAt?: string | null) => {
@@ -464,14 +564,24 @@ const Chat: React.FC = () => {
       return `${diffDays}d ago`;
    };
 
+   const getPresenceLabel = (partner?: ChatPartner | null) => {
+      if (partner?.online) {
+         return 'Active now';
+      }
+      if (partner?.lastSeenVisible === false) {
+         return 'Last seen hidden';
+      }
+      return `Seen ${formatLastSeen(partner?.lastSeenAt)}`;
+   };
+
    const filteredMessages = searchQuery.trim().length === 0
       ? messages
-      : messages.filter((m) => m.content.toLowerCase().includes(searchQuery.toLowerCase()));
+      : messages.filter((message) => message.content.toLowerCase().includes(searchQuery.toLowerCase()));
 
    return (
       <div className="flex h-full min-h-0 w-full bg-transparent rounded-3xl shadow-2xl border border-white/5 animate-fade-in relative backdrop-blur-sm">
-      
-      {/* Sidebar: Chat Channels */}
+
+      {/* Conversation list */}
       <div className={`w-full md:w-80 min-h-0 flex-shrink-0 bg-zinc-900/60 border-r border-white/5 flex flex-col backdrop-blur-xl z-20 ${partnerId ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-6 border-b border-white/5 flex justify-between items-center">
             <h2 className="text-lg font-bold text-zinc-100 tracking-tight">Messages</h2>
@@ -513,6 +623,15 @@ const Chat: React.FC = () => {
                   >
                      Clear local message view
                   </button>
+                  {partnerId && (
+                     <button
+                        onClick={handleBlockPartner}
+                        disabled={blockingPartner}
+                        className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 text-red-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                     >
+                        {blockingPartner ? 'Blocking…' : 'Block user'}
+                     </button>
+                  )}
                </div>
             )}
 
@@ -521,8 +640,8 @@ const Chat: React.FC = () => {
                 <div className="p-8 text-center text-zinc-600 text-sm">No active conversations</div>
             ) : (
                 partners.map(p => (
-                   <div 
-                      key={p.id} 
+                   <div
+                      key={p.id}
                       onClick={() => navigate(`/chat/${p.id}`)}
                       className={`group p-3 rounded-2xl flex items-center cursor-pointer transition-all duration-200 border border-transparent ${partnerId === p.id ? 'bg-indigo-600/10 border-indigo-500/20 shadow-sm' : 'hover:bg-zinc-800/50 hover:border-white/5'}`}
                    >
@@ -534,11 +653,9 @@ const Chat: React.FC = () => {
                                 <span className="opacity-50"><IconUser className="w-6 h-6" /></span>
                              )}
                          </div>
-                         {/* Online Status Dot */}
                          {p.online && (
                             <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-zinc-900 rounded-full z-10 shadow-sm shadow-emerald-500/20"></div>
                          )}
-                         {/* Unread Counter Badge */}
                          {p.unreadCount > 0 && (
                             <div className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full z-10 shadow-lg shadow-indigo-500/30 border border-zinc-900">
                                {p.unreadCount}
@@ -548,7 +665,7 @@ const Chat: React.FC = () => {
                      <div className="ml-3 truncate flex-1">
                         <div className="flex justify-between items-center mb-0.5">
                            <p className={`font-medium text-sm truncate ${p.unreadCount > 0 ? 'text-zinc-100' : 'text-zinc-300 group-hover:text-zinc-200'}`}>{p.name}</p>
-                           <span className="text-[10px] text-zinc-600">{p.online ? 'Now' : formatLastSeen(p.lastSeenAt)}</span>
+                           <span className="text-[10px] text-zinc-600">{p.online ? 'Now' : (p.lastSeenVisible === false ? 'Hidden' : formatLastSeen(p.lastSeenAt))}</span>
                         </div>
                           <p className={`text-xs truncate ${(p.id === activePartnerData?.id && isPartnerTyping) ? 'text-indigo-400 italic' : 'text-zinc-500'}`}>
                            {p.id === activePartnerData?.id && isPartnerTyping ? 'Typing...' : (p.unreadCount > 0 ? 'New message' : 'Click to chat')}
@@ -560,11 +677,22 @@ const Chat: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Panel: Chat Window */}
+         {/* Active conversation */}
       <div className={`flex-1 min-h-0 flex flex-col bg-zinc-900/30 relative overflow-hidden ${!partnerId ? 'hidden md:flex' : 'flex'}`}>
-         {/* Decorative Gradients */}
          <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-600/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
          <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-600/5 rounded-full blur-3xl pointer-events-none translate-y-1/2 -translate-x-1/2"></div>
+
+         {actionError && (
+            <FeedbackBanner variant="error" className="absolute top-4 left-1/2 z-30 -translate-x-1/2 shadow-lg">
+               {actionError}
+            </FeedbackBanner>
+         )}
+
+         {actionSuccess && (
+            <FeedbackBanner variant="success" className="absolute top-4 left-1/2 z-30 -translate-x-1/2 shadow-lg">
+               {actionSuccess}
+            </FeedbackBanner>
+         )}
 
           {!partnerId ? (
               <div className="flex-1 flex items-center justify-center flex-col gap-6 text-zinc-500 z-10">
@@ -578,7 +706,6 @@ const Chat: React.FC = () => {
               </div>
           ) : (
              <>
-                {/* Chat Header */}
                 <div className="h-20 px-6 border-b border-white/5 flex shrink-0 items-center justify-between backdrop-blur-md bg-zinc-900/40 z-20">
                     <div className="flex items-center gap-4">
                        <button
@@ -589,21 +716,21 @@ const Chat: React.FC = () => {
                        </button>
                        <div className="relative">
                            <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden border border-white/10 shadow-md">
-                               {activePartnerData?.profilePicture ? 
-                                 <img src={`${BACKEND_BASE_URL}${activePartnerData.profilePicture}`} className="w-full h-full object-cover"/> : 
+                               {activePartnerData?.profilePicture ?
+                                 <img src={`${BACKEND_BASE_URL}${activePartnerData.profilePicture}`} className="w-full h-full object-cover"/> :
                                  <div className="w-full h-full flex items-center justify-center text-zinc-500"><IconUser className="w-5 h-5" /></div>
                                }
                            </div>
                            {activePartnerData?.online && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border border-zinc-900 rounded-full"></div>}
                        </div>
-                       
+
                         <div className="flex flex-col">
                            <h3 className="text-zinc-100 font-bold text-base tracking-wide flex items-center gap-2">
                               {activePartnerData?.name || 'Loading...'}
                               {activePartnerData?.online && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse inline-block opacity-50"></span>}
                            </h3>
                            <span className={`text-xs font-medium ${activePartnerData?.online ? 'text-emerald-500/80' : 'text-zinc-500'}`}>
-                              {activePartnerData?.online ? 'Active now' : `Seen ${formatLastSeen(activePartnerData?.lastSeenAt)}`}
+                              {getPresenceLabel(activePartnerData)}
                            </span>
                         </div>
                     </div>
@@ -649,7 +776,6 @@ const Chat: React.FC = () => {
                            </div>
                         )}
 
-                {/* Messages Feed */}
                 <div ref={messagesContainerRef} className="flex-1 min-h-0 p-6 overflow-y-auto custom-scrollbar scroll-smooth flex flex-col z-10">
                   {filteredMessages.length === 0 ? (
                         <div className="flex-1 flex flex-col items-center justify-center opacity-40">
@@ -661,23 +787,23 @@ const Chat: React.FC = () => {
                        {filteredMessages.map((m, idx) => {
                               const isOwn = m.senderId === currentUserId;
                           const isSequence = idx > 0 && filteredMessages[idx-1].senderId === m.senderId;
-                              
+
                               return (
                                  <div key={m.id} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'} group animate-fade-in`}>
                                {!isOwn && !isSequence && (
                                   <div className="w-8 h-8 rounded-full bg-zinc-800 border border-white/5 flex-shrink-0 mr-2 overflow-hidden self-end mb-1 shadow-sm">
-                                      {activePartnerData?.profilePicture ? 
-                                       <img src={`${BACKEND_BASE_URL}${activePartnerData.profilePicture}`} className="w-full h-full object-cover"/> : 
+                                      {activePartnerData?.profilePicture ?
+                                       <img src={`${BACKEND_BASE_URL}${activePartnerData.profilePicture}`} className="w-full h-full object-cover"/> :
                                        <div className="w-full h-full flex items-center justify-center text-xs opacity-50"><IconUser className="w-4 h-4" /></div>
                                       }
                                   </div>
                                )}
                                {!isOwn && isSequence && <div className="w-10"></div>}
-                               
+
                                <div className={`max-w-[70%] relative ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
                                    <div className={`px-5 py-3 text-sm shadow-md backdrop-blur-sm border ${
-                                      isOwn 
-                                         ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm border-indigo-500/20' 
+                                      isOwn
+                                         ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm border-indigo-500/20'
                                          : 'bg-zinc-800/80 text-zinc-100 rounded-2xl rounded-tl-sm border-white/5'
                                    } transition-all hover:shadow-lg`}>
                                       {m.attachmentUrl && /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(m.attachmentUrl) ? (
@@ -727,7 +853,7 @@ const Chat: React.FC = () => {
                            </div>
                         );
                     })}
-                    
+
                     {isPartnerTyping && (
                        <div className="flex w-full justify-start items-center gap-3 pl-10 animate-pulse">
                           <div className="bg-zinc-800/50 px-4 py-2 rounded-full border border-white/5 flex gap-1 items-center">
@@ -738,13 +864,12 @@ const Chat: React.FC = () => {
                           <span className="text-xs text-zinc-500 font-medium">Typing...</span>
                        </div>
                     )}
-                    
+
                         <div ref={messagesEndRef} className="h-4" />
                        </div>
                     )}
                 </div>
 
-                {/* Message Input Input */}
                 {pendingFile && (
                     <div className="px-5 py-2 bg-zinc-900/80 border-t border-white/5 flex items-center gap-2">
                        <IconPaperclip className="w-4 h-4 text-indigo-400 shrink-0" />
@@ -755,6 +880,7 @@ const Chat: React.FC = () => {
                     </div>
                 )}
 
+                {/* Message composer */}
                 <div className="p-5 bg-zinc-900/60 backdrop-blur-xl border-t border-white/5 flex shrink-0 gap-3 w-full z-20 items-end">
                     <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
                     <button
@@ -764,8 +890,8 @@ const Chat: React.FC = () => {
                        <IconPaperclip className="w-5 h-5" />
                     </button>
                     <div className="flex-1 bg-zinc-800/50 rounded-2xl border border-zinc-700/50 focus-within:border-indigo-500/50 focus-within:bg-zinc-800 transition-all flex items-center shadow-inner">
-                       <input 
-                          type="text" 
+                       <input
+                          type="text"
                           value={newMessage}
                           onChange={(e) => handleMessageInput(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && (pendingFile ? handleSendAttachment() : handleSendMessage())}
@@ -774,7 +900,7 @@ const Chat: React.FC = () => {
                           autoFocus
                        />
                     </div>
-                    <button 
+                    <button
                        onClick={pendingFile ? handleSendAttachment : handleSendMessage}
                        disabled={uploading || (!pendingFile && !newMessage.trim())}
                        className="p-3 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-500 hover:scale-105 transition-all active:scale-95 flex items-center justify-center h-[50px] w-[50px]"

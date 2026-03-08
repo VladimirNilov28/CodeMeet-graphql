@@ -20,6 +20,4 @@ public class Profile {
 
     @Column(length = 1000)
     private String aboutMe;
-
-    private boolean isOnline = false;
 }

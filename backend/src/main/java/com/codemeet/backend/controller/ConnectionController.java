@@ -5,6 +5,7 @@ import com.codemeet.backend.model.ConnectionStatus;
 import com.codemeet.backend.model.User;
 import com.codemeet.backend.repository.ConnectionRepository;
 import com.codemeet.backend.repository.UserRepository;
+import com.codemeet.backend.service.RecommendationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -18,18 +19,18 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api")
 public class ConnectionController {
-
     private final ConnectionRepository connectionRepository;
     private final UserRepository userRepository;
+    private final RecommendationService recommendationService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public ConnectionController(ConnectionRepository connectionRepository, UserRepository userRepository, SimpMessagingTemplate messagingTemplate) {
+    public ConnectionController(ConnectionRepository connectionRepository, UserRepository userRepository, RecommendationService recommendationService, SimpMessagingTemplate messagingTemplate) {
         this.connectionRepository = connectionRepository;
         this.userRepository = userRepository;
+        this.recommendationService = recommendationService;
         this.messagingTemplate = messagingTemplate;
     }
 
-    // Get all active connections for the current user (returns only IDs per spec)
     @GetMapping("/connections")
     public ResponseEntity<List<Map<String, String>>> getConnections(Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
@@ -50,7 +51,6 @@ public class ConnectionController {
         return ResponseEntity.ok(response);
     }
 
-    // Get pending connection requests for current user
     @GetMapping("/connections/pending")
     public ResponseEntity<List<Map<String, String>>> getPendingConnections(Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
@@ -76,10 +76,17 @@ public class ConnectionController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot connect with yourself");
         }
 
+        if (recommendationService.isBlockedEitherDirection(currentUser, recipient)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot connect with this user");
+        }
+
         Optional<Connection> existingRequest = connectionRepository.findAllConnectionsBetweenUsers(currentUser, recipient);
-        
         if (existingRequest.isPresent()) {
+            if (existingRequest.get().getStatus() == ConnectionStatus.SKIPPED) {
+                connectionRepository.delete(existingRequest.get());
+            } else {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Connection or request already exists");
+            }
         }
 
         Connection request = new Connection();
@@ -99,7 +106,7 @@ public class ConnectionController {
          List<Map<String, String>> response = pending.stream()
                 .map(conn -> {
                     Map<String, String> map = new HashMap<>();
-                    map.put("id", conn.getRequester().getId().toString()); // Return the requester's ID
+                    map.put("id", conn.getRequester().getId().toString());
                     map.put("connectionId", conn.getId().toString()); 
                     return map;
                 })

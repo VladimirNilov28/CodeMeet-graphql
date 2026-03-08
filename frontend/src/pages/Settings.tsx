@@ -1,10 +1,21 @@
-import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import api from '../api/axios';
+import FeedbackBanner from '../components/FeedbackBanner.tsx';
+import { IconBug, IconGitea, IconUser } from '../components/Icons';
 
 type PrivacySettings = {
   hideAvatar: boolean;
-  hideCity: boolean;
+  hideLocation: boolean;
+  hideAge: boolean;
   hideLastSeen: boolean;
+};
+
+const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
+  hideAvatar: false,
+  hideLocation: false,
+  hideAge: false,
+  hideLastSeen: false,
 };
 
 const STORAGE_KEY = 'privacySettings';
@@ -12,6 +23,8 @@ const FONT_KEY = 'fontPreference';
 const THEME_KEY = 'themePreference';
 const BG_KEY = 'bgPreference';
 const CUSTOM_THEME_KEY = 'customThemeColors';
+const GITEA_URL = import.meta.env.VITE_GITEA_URL || 'https://gitea.example.com/your-org/codemeet';
+const BUG_REPORT_URL = import.meta.env.VITE_BUG_REPORT_URL || `${GITEA_URL.replace(/\/$/, '')}/issues/new`;
 
 const FONT_PRESETS = [
   { label: 'Inter', value: '"Inter"', description: 'Clean humanist sans-serif (default)' },
@@ -49,7 +62,11 @@ const BG_PRESETS = [
 type CustomColors = { bg: string; surface: string; accent: string };
 const DEFAULT_CUSTOM: CustomColors = { bg: '#0f0f23', surface: '#1a1a3e', accent: '#00d4ff' };
 
-/**  Convert hex -> slightly lighter/darker variant for derived palette stops */
+type FeedbackState = {
+  variant: 'success' | 'error';
+  message: string;
+};
+
 function hexToHSL(hex: string): [number, number, number] {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -81,46 +98,52 @@ function adjustL(hex: string, delta: number): string {
   return hslToHex(h, s, Math.max(0, Math.min(100, l + delta)));
 }
 
-const Settings: React.FC = () => {
-  const initial = useMemo<PrivacySettings>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return { hideAvatar: false, hideCity: false, hideLastSeen: false };
-      return JSON.parse(raw) as PrivacySettings;
-    } catch {
-      return { hideAvatar: false, hideCity: false, hideLastSeen: false };
-    }
-  }, []);
+function readLocalPrivacySettings(): PrivacySettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_PRIVACY_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<PrivacySettings> & { hideCity?: boolean };
+    return {
+      ...DEFAULT_PRIVACY_SETTINGS,
+      ...parsed,
+      hideLocation: parsed.hideLocation ?? parsed.hideCity ?? false,
+    };
+  } catch {
+    return DEFAULT_PRIVACY_SETTINGS;
+  }
+}
 
-  const [settings, setSettings] = useState<PrivacySettings>(initial);
-  const [saved, setSaved] = useState(false);
+const Settings: React.FC = () => {
+  const [settings, setSettings] = useState<PrivacySettings>(DEFAULT_PRIVACY_SETTINGS);
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [loadingPrivacy, setLoadingPrivacy] = useState(true);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
   const [selectedFont, setSelectedFont] = useState(() => localStorage.getItem(FONT_KEY) || '"Inter"');
   const [selectedTheme, setSelectedTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'default');
 
-  // Background state
   const [bgPref, setBgPref] = useState<string | { type: string; url: string }>(() => {
     try { return JSON.parse(localStorage.getItem(BG_KEY) || '"dots"'); } catch { return 'dots'; }
   });
   const bgFileRef = useRef<HTMLInputElement>(null);
 
-  // Custom theme colours
+  const [blockedUsers, setBlockedUsers] = useState<Array<{ id: string; name: string }>>([]);
+
   const [customColors, setCustomColors] = useState<CustomColors>(() => {
     try { return JSON.parse(localStorage.getItem(CUSTOM_THEME_KEY) || 'null') || DEFAULT_CUSTOM; } catch { return DEFAULT_CUSTOM; }
   });
 
   const toggle = (key: keyof PrivacySettings) => {
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
-    setSaved(false);
+    setFeedback(null);
   };
 
   const applyFont = (fontValue: string) => {
     setSelectedFont(fontValue);
     document.documentElement.style.setProperty('--app-font', fontValue);
     localStorage.setItem(FONT_KEY, fontValue);
-    setSaved(false);
+    setFeedback(null);
   };
 
-  /** Remove all inline custom-theme overrides so the next theme's CSS can take effect */
   const clearCustomColors = () => {
     const s = document.documentElement.style;
     [
@@ -145,7 +168,7 @@ const Settings: React.FC = () => {
       document.documentElement.setAttribute('data-theme', theme);
     }
     localStorage.setItem(THEME_KEY, theme);
-    setSaved(false);
+    setFeedback(null);
   };
 
   const applyCustomColors = useCallback((c: CustomColors) => {
@@ -153,7 +176,6 @@ const Settings: React.FC = () => {
     root.style.setProperty('--custom-bg', c.bg);
     root.style.setProperty('--custom-surface', c.surface);
     root.style.setProperty('--custom-accent', c.accent);
-    // Derive a full zinc + indigo palette from the 3 picks
     root.style.setProperty('--color-zinc-950', c.bg);
     root.style.setProperty('--color-zinc-900', c.surface);
     root.style.setProperty('--color-zinc-800', adjustL(c.surface, 5));
@@ -174,27 +196,107 @@ const Settings: React.FC = () => {
     localStorage.setItem(CUSTOM_THEME_KEY, JSON.stringify(c));
   }, []);
 
-  // Re-apply custom colours if the custom theme is active on mount
   useEffect(() => {
     if (selectedTheme === 'custom') {
       document.documentElement.setAttribute('data-theme', 'custom');
       applyCustomColors(customColors);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [applyCustomColors, customColors, selectedTheme]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPrivacySettings = async () => {
+      setLoadingPrivacy(true);
+      const fallback = readLocalPrivacySettings();
+
+      try {
+        const { data } = await api.get('/me/privacy');
+        if (cancelled) return;
+
+        const next = {
+          hideAvatar: Boolean(data?.hideAvatar),
+          hideLocation: Boolean(data?.hideLocation),
+          hideAge: Boolean(data?.hideAge),
+          hideLastSeen: Boolean(data?.hideLastSeen),
+        };
+
+        setSettings(next);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        if (cancelled) return;
+        setSettings(fallback);
+      } finally {
+        if (!cancelled) {
+          setLoadingPrivacy(false);
+        }
+      }
+    };
+
+    loadPrivacySettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadBlockedUsers = async () => {
+      try {
+        const { data } = await api.get('/block');
+        setBlockedUsers(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Failed to load blocked users:', error);
+        setFeedback({ variant: 'error', message: 'Could not load your block list right now.' });
+      }
+    };
+
+    loadBlockedUsers();
+  }, []);
+
+  useEffect(() => {
+    const handleBlocked = (event: Event) => {
+      const customEvent = event as CustomEvent<{ id: string; name: string }>;
+      const blockedUser = customEvent.detail;
+      if (!blockedUser?.id) return;
+
+      setBlockedUsers((prev) => {
+        if (prev.some((user) => user.id === blockedUser.id)) {
+          return prev;
+        }
+        return [...prev, { id: blockedUser.id, name: blockedUser.name || `User-${blockedUser.id.slice(0, 8)}` }];
+      });
+      setFeedback({ variant: 'success', message: `${blockedUser.name || 'User'} was added to your block list.` });
+    };
+
+    const handleUnblocked = (event: Event) => {
+      const customEvent = event as CustomEvent<{ id: string; name?: string }>;
+      const unblockedUser = customEvent.detail;
+      if (!unblockedUser?.id) return;
+
+      setBlockedUsers((prev) => prev.filter((user) => user.id !== unblockedUser.id));
+      setFeedback({ variant: 'success', message: `${unblockedUser.name || 'User'} was removed from your block list.` });
+    };
+
+    window.addEventListener('codemeet:user-blocked', handleBlocked as EventListener);
+    window.addEventListener('codemeet:user-unblocked', handleUnblocked as EventListener);
+
+    return () => {
+      window.removeEventListener('codemeet:user-blocked', handleBlocked as EventListener);
+      window.removeEventListener('codemeet:user-unblocked', handleUnblocked as EventListener);
+    };
+  }, []);
 
   const handleCustomColorChange = (key: keyof CustomColors, value: string) => {
     const next = { ...customColors, [key]: value };
     setCustomColors(next);
     if (selectedTheme === 'custom') applyCustomColors(next);
-    setSaved(false);
+    setFeedback(null);
   };
 
-  // Background handlers
   const applyBg = (val: string | { type: string; url: string }) => {
     setBgPref(val);
     localStorage.setItem(BG_KEY, JSON.stringify(val));
-    setSaved(false);
-    // Force Layout re-render by dispatching a storage event
+    setFeedback(null);
     window.dispatchEvent(new Event('bg-changed'));
   };
 
@@ -209,14 +311,38 @@ const Settings: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const save = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    localStorage.setItem(FONT_KEY, selectedFont);
-    localStorage.setItem(THEME_KEY, selectedTheme);
-    localStorage.setItem(BG_KEY, JSON.stringify(bgPref));
-    if (selectedTheme === 'custom') localStorage.setItem(CUSTOM_THEME_KEY, JSON.stringify(customColors));
-    setSaved(true);
+  const savePrivacySettings = async () => {
+    try {
+      setSavingPrivacy(true);
+      await api.post('/me/privacy', settings);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      localStorage.setItem(FONT_KEY, selectedFont);
+      localStorage.setItem(THEME_KEY, selectedTheme);
+      localStorage.setItem(BG_KEY, JSON.stringify(bgPref));
+      if (selectedTheme === 'custom') localStorage.setItem(CUSTOM_THEME_KEY, JSON.stringify(customColors));
+      setFeedback({ variant: 'success', message: 'Privacy settings saved successfully.' });
+    } catch (error) {
+      console.error('Failed to save privacy settings:', error);
+      setFeedback({ variant: 'error', message: 'Could not save your privacy settings right now.' });
+    } finally {
+      setSavingPrivacy(false);
+    }
   };
+
+  async function handleUnblock(id: string): Promise<void> {
+    try {
+      const userToUnblock = blockedUsers.find((user) => user.id === id);
+      await api.delete(`/block/${id}`);
+      setBlockedUsers((prev) => prev.filter((user) => user.id !== id));
+      setFeedback({ variant: 'success', message: `${userToUnblock?.name || 'User'} was unblocked successfully.` });
+      window.dispatchEvent(new CustomEvent('codemeet:user-unblocked', {
+        detail: { id, name: userToUnblock?.name }
+      }));
+    } catch (error) {
+      console.error('Failed to unblock user:', error);
+      setFeedback({ variant: 'error', message: 'Could not unblock this user right now.' });
+    }
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
@@ -225,7 +351,8 @@ const Settings: React.FC = () => {
         <p className="text-zinc-500 mt-1">Appearance and privacy preferences.</p>
       </div>
 
-      {/* Font Picker */}
+      {feedback && <FeedbackBanner variant={feedback.variant}>{feedback.message}</FeedbackBanner>}
+
       <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4">
         <h2 className="text-lg font-semibold text-zinc-200">Font</h2>
         <p className="text-zinc-500 text-sm">Choose a typeface for the interface. Includes GitHub's Monaspace family.</p>
@@ -265,7 +392,6 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      {/* Theme Picker */}
       <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4">
         <h2 className="text-lg font-semibold text-zinc-200">Theme</h2>
         <p className="text-zinc-500 text-sm">Switch between developer-friendly colour palettes. Applied instantly.</p>
@@ -282,7 +408,6 @@ const Settings: React.FC = () => {
               }`}
             >
               <div className="flex items-center gap-3">
-                {/* Colour swatch */}
                 {theme.colors.length > 0 ? (
                   <div className="flex -space-x-1">
                     {theme.colors.map((c, i) => (
@@ -310,7 +435,6 @@ const Settings: React.FC = () => {
           ))}
         </div>
 
-        {/* Custom theme colour inputs — visible when Custom is selected */}
         {selectedTheme === 'custom' && (
           <div className="rounded-xl border border-white/5 bg-zinc-900/60 p-4 space-y-3">
             <p className="text-xs text-zinc-500">Pick 3 colours. The rest of the palette is derived automatically.</p>
@@ -339,7 +463,6 @@ const Settings: React.FC = () => {
                 />
               </div>
             ))}
-            {/* Live preview swatch */}
             <div className="flex gap-1 pt-1">
               <div className="flex-1 h-6 rounded-l-lg" style={{ backgroundColor: customColors.bg }} />
               <div className="flex-1 h-6" style={{ backgroundColor: customColors.surface }} />
@@ -349,7 +472,6 @@ const Settings: React.FC = () => {
         )}
       </div>
 
-      {/* Background Picker */}
       <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4">
         <h2 className="text-lg font-semibold text-zinc-200">Background Pattern</h2>
         <p className="text-zinc-500 text-sm">Choose a content-area background pattern, or upload your own image.</p>
@@ -367,7 +489,6 @@ const Settings: React.FC = () => {
                     : 'border-white/5 bg-zinc-900/40 hover:border-white/10 hover:bg-zinc-800/40'
                 }`}
               >
-                {/* Mini preview */}
                 <div className="w-full h-10 rounded-lg bg-zinc-800/60 mb-2 overflow-hidden relative border border-white/5">
                   {bg.preview !== 'none' && (
                     <div
@@ -385,7 +506,6 @@ const Settings: React.FC = () => {
             );
           })}
 
-          {/* Custom image upload tile */}
           <button
             onClick={() => bgFileRef.current?.click()}
             className={`rounded-xl border px-3 py-3 text-left transition-all ${
@@ -420,17 +540,25 @@ const Settings: React.FC = () => {
         <p className="text-[10px] text-zinc-600">Recommended: 1920×1080 or larger, JPEG/PNG/WebP, under 2 MB for best performance. Image is stored in your browser only.</p>
       </div>
 
-      {/* Privacy Controls */}
       <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4">
         <h2 className="text-lg font-semibold text-zinc-200">Privacy Controls</h2>
+        <p className="text-zinc-500 text-sm">
+          These controls are saved to your account and applied when other signed-in users open your profile or presence details.
+        </p>
 
-        {[{ key: 'hideAvatar', label: 'Hide avatar from public profile' }, { key: 'hideCity', label: 'Hide city from public profile' }, { key: 'hideLastSeen', label: 'Hide last seen status' }].map((item) => (
+        {[
+          { key: 'hideAvatar', label: 'Hide avatar from public profile' },
+          { key: 'hideLocation', label: 'Hide GPS match radius from public profile' },
+          { key: 'hideAge', label: 'Hide age from public profile' },
+          { key: 'hideLastSeen', label: 'Hide last seen status' },
+        ].map((item) => (
           <label key={item.key} className="flex items-center justify-between rounded-xl border border-white/5 bg-zinc-900/40 px-4 py-3 cursor-pointer">
             <span className="text-zinc-300 text-sm">{item.label}</span>
             <input
               type="checkbox"
               checked={settings[item.key as keyof PrivacySettings]}
               onChange={() => toggle(item.key as keyof PrivacySettings)}
+              disabled={loadingPrivacy}
               className="h-4 w-4 accent-indigo-500"
             />
           </label>
@@ -438,10 +566,80 @@ const Settings: React.FC = () => {
 
         <div className="flex items-center justify-between pt-2">
           <Link to="/privacy" className="text-sm text-indigo-300 hover:text-indigo-200">Read Privacy statement</Link>
-          <button onClick={save} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Save settings</button>
+          <button
+            onClick={savePrivacySettings}
+            disabled={loadingPrivacy || savingPrivacy}
+            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loadingPrivacy ? 'Loading…' : savingPrivacy ? 'Saving…' : 'Save privacy settings'}
+          </button>
         </div>
 
-        {saved && <p className="text-emerald-400 text-xs">Settings saved.</p>}
+      </div>
+
+      <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4">
+        <h2 className="text-lg font-semibold text-zinc-200">Blocked Users</h2>
+        <p className="text-zinc-500 text-sm">Manage your block list. Blocked users cannot see your profile or interact with you.</p>
+        {blockedUsers.length === 0 ? (
+          <p className="text-zinc-400 text-sm">You have not blocked any users.</p>
+        ) : (
+          <div className="space-y-3">
+            {blockedUsers.map((user) => (
+              <div key={user.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-zinc-900/40 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-zinc-700/50 flex items-center justify-center">
+                    <IconUser className="w-4 h-4 text-zinc-500" />
+                  </div>
+                  <span className="text-zinc-300 text-sm">{user.name}</span>
+                </div>
+                <button onClick={() => handleUnblock(user.id)} className="text-sm text-red-400 hover:text-red-300">Unblock</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+
+      </div>
+
+      <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4">
+        <h2 className="text-lg font-semibold text-zinc-200">Support & Source</h2>
+        <p className="text-zinc-500 text-sm">Need to flag a bug or jump into the repo? These links open in a new tab.</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <a
+            href={BUG_REPORT_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="group rounded-xl border border-white/5 bg-zinc-900/40 px-4 py-4 transition-all hover:border-red-500/20 hover:bg-red-500/5"
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-red-300">
+                <IconBug className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100 group-hover:text-red-200">Report a bug</h3>
+                <p className="mt-1 text-xs text-zinc-500">Open the issue tracker and log what went sideways.</p>
+              </div>
+            </div>
+          </a>
+
+          <a
+            href={GITEA_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="group rounded-xl border border-white/5 bg-zinc-900/40 px-4 py-4 transition-all hover:border-emerald-500/20 hover:bg-emerald-500/5"
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-emerald-300">
+                <IconGitea className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100 group-hover:text-emerald-200">Open Gitea</h3>
+                <p className="mt-1 text-xs text-zinc-500">Browse source, branches, and issues from the repo home.</p>
+              </div>
+            </div>
+          </a>
+        </div>
       </div>
 
       <div className="text-xs text-zinc-500">&copy; {new Date().getFullYear()} CodeMeet. All rights reserved.</div>

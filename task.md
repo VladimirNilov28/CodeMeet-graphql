@@ -39,7 +39,7 @@ It will allow users to register, view potential matches, connect with other user
 ### Locations
 - You'll need to implement some rudimentary location based sense-checking.
 - If the best possible match is impractically far away, then they are not a suitable recommendation.
-- This system could be a list of cities, where matches are only possible within that cities.
+- This implementation uses browser GPS coordinates plus a configurable radius in kilometres, stored in PostgreSQL with PostGIS distance checks.
 
 ### Recommendations
 - Users must be able to see a list of recommended connections. This list must be prioritized to show the strongest matches first.
@@ -91,7 +91,7 @@ You must implement the following RESTful endpoints. None of them must return aut
 ### Extra Requirements (Optional)
 - **Online Indicator**: Show an online/offline indicator on the user's profile and chat views.
 - **Typing in progress**: Show a "typing" in progress indicator on the chat view 💬.
-- **Proximity-based location**: Get user's location from browser API, store coordinates, and use a maximum radius to recommend within this radius.
+- **Proximity-based location**: Get the user's location from the browser API, store coordinates, and use a maximum radius to recommend within this radius.
 
 ---
 

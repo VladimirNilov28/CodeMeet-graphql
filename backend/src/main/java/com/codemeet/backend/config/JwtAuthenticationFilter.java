@@ -19,7 +19,7 @@ import java.util.Collections;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
 
-    public JwtAuthenticationFilter (JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService) {
         this.jwtService = jwtService;
     }
 
@@ -30,23 +30,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         FilterChain filterChain
     ) throws ServletException, IOException {
 
+        // Read the bearer token from the standard Authorization header.
         final String authHeader = request.getHeader("Authorization");
 
-        //  If there is no token, just pass it along (SecurityConfig will block it if it's a protected route)
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        final String jwt = authHeader.substring(7); // Remove "Bearer " prefix
+        final String jwt = authHeader.substring(7);
 
         try {
+            // Extract identity from the token before we build the Spring Security authentication object.
             final String userEmail = jwtService.extractEmail(jwt);
 
-        // if we have an email and the user is not authenticated yet
             if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 if (jwtService.isTokenValid(jwt)) {
-                    // Tell Spring Security that the user is legit.
                     String role = jwtService.extractRole(jwt);
 
                     SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + role);
@@ -56,14 +55,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     );
 
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    // Once stored in the security context, controllers can treat this request as authenticated.
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
         } catch (Exception e) {
-            //Malformed token, expired token, or other issues will be caught here. We can log it if needed, but we'll just ignore it and let the request fail if it's invalid.
         }
         filterChain.doFilter(request, response);
     }
-
-
 }

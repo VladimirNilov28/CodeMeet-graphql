@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/axios';
+import api, { getApiErrorMessage } from '../api/axios';
+import FeedbackBanner from '../components/FeedbackBanner.tsx';
 
 type BioForm = {
   primaryLanguage: string;
@@ -8,7 +9,10 @@ type BioForm = {
   lookFor: string;
   preferredOs: string;
   codingStyle: string;
-  city: string;
+  latitude: string;
+  longitude: string;
+  maxDistanceKm: string;
+  age: string;
 };
 
 type BioErrors = Partial<Record<keyof BioForm, string>>;
@@ -19,7 +23,10 @@ const defaultBio: BioForm = {
   lookFor: '',
   preferredOs: '',
   codingStyle: '',
-  city: '',
+  latitude: '',
+  longitude: '',
+  maxDistanceKm: '',
+  age: '',
 };
 
 const primaryLanguageOptions = ['TypeScript', 'JavaScript', 'Java', 'Python', 'C#', 'Go', 'Rust', 'Kotlin', 'Swift', 'PHP'];
@@ -37,9 +44,18 @@ const splitCsv = (value: string): string[] =>
 const toCsv = (values: string[]): string => values.join(', ');
 
 const calculateCompletion = (bio: BioForm): number => {
-  const fields: (keyof BioForm)[] = ['primaryLanguage', 'experienceLevel', 'lookFor', 'preferredOs', 'codingStyle', 'city'];
-  const filled = fields.filter((field) => bio[field].trim().length > 0).length;
-  return Math.round((filled / fields.length) * 100);
+  const values = [
+    bio.primaryLanguage,
+    bio.experienceLevel,
+    bio.lookFor,
+    bio.preferredOs,
+    bio.codingStyle,
+    bio.age,
+    bio.latitude && bio.longitude && bio.maxDistanceKm ? 'location-ready' : '',
+  ];
+
+  const filled = values.filter((value) => value.trim().length > 0).length;
+  return Math.round((filled / values.length) * 100);
 };
 
 const SetupBio: React.FC = () => {
@@ -51,12 +67,15 @@ const SetupBio: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [gpsStatus, setGpsStatus] = useState('');
+  const [locating, setLocating] = useState(false);
 
   const completion = calculateCompletion(form);
   const ringSize = 100;
   const stroke = 8;
   const radius = (ringSize - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
+  // The ring uses the remaining stroke length, not the completed percentage directly.
   const dashOffset = circumference * (1 - completion / 100);
 
   useEffect(() => {
@@ -67,6 +86,7 @@ const SetupBio: React.FC = () => {
     }
 
     const preloadBio = async () => {
+      // Load saved bio and profile text so the form works for both first-time setup and later edits.
       try {
         const res = await api.get('/me/bio');
         setForm({
@@ -75,16 +95,19 @@ const SetupBio: React.FC = () => {
           lookFor: res.data?.lookFor || '',
           preferredOs: res.data?.preferredOs || '',
           codingStyle: res.data?.codingStyle || '',
-          city: res.data?.city || '',
+          latitude: res.data?.latitude != null ? String(res.data.latitude) : '',
+          longitude: res.data?.longitude != null ? String(res.data.longitude) : '',
+          maxDistanceKm: res.data?.maxDistanceKm != null ? String(res.data.maxDistanceKm) : '',
+          age: res.data?.age != null ? String(res.data.age) : '',
         });
       } catch {
-        // No existing bio yet is fine; keep defaults.
+        // Missing bio is expected for first-time setup.
       }
       try {
         const profileRes = await api.get('/me/profile');
         setAboutMe(profileRes.data?.aboutMe || '');
       } catch {
-        // No profile yet
+        // Missing profile text is valid for first-time setup.
       }
       setLoading(false);
     };
@@ -100,20 +123,19 @@ const SetupBio: React.FC = () => {
   const onSelectOption = (field: keyof BioForm, option: string) => {
     const current = splitCsv(form[field]);
     let next: string[];
-    
-    // Single select for experience level
+
+    // Experience is single-choice; the other chip groups allow up to three selections.
     if (field === 'experienceLevel') {
-        next = [option];
+      next = [option];
     } else {
-        // Multi select for others
-        if (current.includes(option)) {
-            next = current.filter(i => i !== option);
-        } else {
-            if (current.length >= 3) return; // Max 3
-            next = [...current, option];
-        }
+      if (current.includes(option)) {
+        next = current.filter(i => i !== option);
+      } else {
+        if (current.length >= 3) return;
+        next = [...current, option];
+      }
     }
-    
+
     onChange(field, toCsv(next));
   };
 
@@ -131,10 +153,31 @@ const SetupBio: React.FC = () => {
       return '';
     }
 
-    if (field === 'city') {
-      if (trimmed.length < 2) return 'Too short';
-      if (trimmed.length > 40) return 'Too long';
-      if (!/^[a-zA-ZÀ-ž\s'-]+$/.test(trimmed)) return 'Invalid characters';
+    if (field === 'latitude') {
+      const latitude = Number(trimmed);
+      if (Number.isNaN(latitude)) return 'Enter a valid latitude';
+      if (latitude < -90 || latitude > 90) return 'Latitude must be between -90 and 90';
+      return '';
+    }
+
+    if (field === 'longitude') {
+      const longitude = Number(trimmed);
+      if (Number.isNaN(longitude)) return 'Enter a valid longitude';
+      if (longitude < -180 || longitude > 180) return 'Longitude must be between -180 and 180';
+      return '';
+    }
+
+    if (field === 'maxDistanceKm') {
+      if (!/^\d+$/.test(trimmed)) return 'Numbers only';
+      const radius = Number(trimmed);
+      if (radius < 1 || radius > 500) return 'Radius must be 1-500 km';
+      return '';
+    }
+
+    if (field === 'age') {
+      if (!/^\d+$/.test(trimmed)) return 'Numbers only';
+      const age = Number(trimmed);
+      if (age < 13 || age > 120) return 'Age must be 13-120';
       return '';
     }
 
@@ -147,7 +190,7 @@ const SetupBio: React.FC = () => {
 
   const validateForm = (): boolean => {
     const nextErrors: BioErrors = {};
-    const fields: (keyof BioForm)[] = ['primaryLanguage', 'experienceLevel', 'lookFor', 'preferredOs', 'codingStyle', 'city'];
+    const fields: (keyof BioForm)[] = ['primaryLanguage', 'experienceLevel', 'lookFor', 'preferredOs', 'codingStyle', 'latitude', 'longitude', 'maxDistanceKm', 'age'];
 
     fields.forEach((field) => {
       const message = validateField(field, form[field]);
@@ -158,6 +201,42 @@ const SetupBio: React.FC = () => {
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setGpsStatus('This browser does not support GPS location capture.');
+      return;
+    }
+
+    // Browser geolocation fills the coordinate fields and provides a default radius if none was chosen yet.
+    setLocating(true);
+    setGpsStatus('Requesting your current coordinates...');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextLatitude = position.coords.latitude.toFixed(6);
+        const nextLongitude = position.coords.longitude.toFixed(6);
+        setForm((prev) => ({
+          ...prev,
+          latitude: nextLatitude,
+          longitude: nextLongitude,
+          maxDistanceKm: prev.maxDistanceKm || '25',
+        }));
+        setErrors((prev) => ({ ...prev, latitude: undefined, longitude: undefined }));
+        setGpsStatus(`Location captured with ±${Math.round(position.coords.accuracy)} m accuracy.`);
+        setLocating(false);
+      },
+      (geoError) => {
+        setGpsStatus(geoError.message || 'Could not read your current location.');
+        setLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      },
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -174,20 +253,28 @@ const SetupBio: React.FC = () => {
     setSuccess('');
 
     try {
-      await api.post('/me/bio', form);
+      await api.post('/me/bio', {
+        ...form,
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+        maxDistanceKm: Number(form.maxDistanceKm),
+        age: Number(form.age),
+      });
       await api.post('/me/profile', { aboutMe });
       setSuccess('Profile updated successfully');
       setTimeout(() => navigate('/dashboard'), 800);
-    } catch (err: any) {
-      if (err?.response?.status === 401 || err?.response?.status === 403) {
+    } catch (error: unknown) {
+      const status = typeof error === 'object' && error !== null && 'response' in error
+        ? (error as { response?: { status?: number } }).response?.status
+        : undefined;
+
+      if (status === 401 || status === 403) {
         localStorage.removeItem('token');
         navigate('/login');
         return;
       }
-      const backendMessage = typeof err?.response?.data === 'string'
-        ? err.response.data
-        : err?.response?.data?.message;
-      setError(backendMessage || 'Failed to save');
+
+      setError(getApiErrorMessage(error, 'Failed to save'));
     } finally {
       setSaving(false);
     }
@@ -201,7 +288,7 @@ const SetupBio: React.FC = () => {
         <div className="space-y-2">
             <div className="flex justify-between items-center">
                 <label className="text-xs uppercase tracking-wider text-zinc-500 font-bold">{label}</label>
-                {hasError && <span className="text-rose-500 text-xs">{errors[field]}</span>}
+            {hasError && <span className="text-red-300 text-xs">{errors[field]}</span>}
             </div>
             <div className="flex flex-wrap gap-2">
                 {options.map(opt => {
@@ -244,13 +331,15 @@ const SetupBio: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column: Form */}
-          <div className="lg:col-span-2 space-y-6">
-              <div className="glass-panel p-6 rounded-2xl border border-white/5 relative overflow-hidden">
-                {error && <div className="absolute top-0 left-0 w-full bg-rose-500/20 text-rose-300 text-xs px-4 py-1 text-center">{error}</div>}
-                {success && <div className="absolute top-0 left-0 w-full bg-emerald-500/20 text-emerald-300 text-xs px-4 py-1 text-center">{success}</div>}
-                
-                <form id="bio-form" onSubmit={handleSubmit} className="space-y-8 mt-2">
+        {/* Editable bio form */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="glass-panel p-6 rounded-2xl border border-white/5 relative overflow-hidden">
+                <div className="space-y-4">
+                  {error && <FeedbackBanner variant="error">{error}</FeedbackBanner>}
+                  {success && <FeedbackBanner variant="success">{success}</FeedbackBanner>}
+                </div>
+
+                <form id="bio-form" onSubmit={handleSubmit} className="space-y-8 mt-4">
                     {renderMultiSelect('primaryLanguage', primaryLanguageOptions, 'Primary Stack (Max 3)')}
                     
                     <div className="space-y-4">
@@ -275,16 +364,79 @@ const SetupBio: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="space-y-2">
-                         <label className="text-xs uppercase tracking-wider text-zinc-500 font-bold">Operating Base (City)</label>
-                         <input
-                            value={form.city}
-                            onChange={(e) => onChange('city', e.target.value)}
-                            placeholder="e.g. San Francisco"
+                      <div className="space-y-4 rounded-2xl border border-white/5 bg-zinc-900/30 p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <label className="text-xs uppercase tracking-wider text-zinc-500 font-bold">GPS Match Location</label>
+                            <p className="text-xs text-zinc-500 mt-1">Use your browser location for radius-based recommendations.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleUseCurrentLocation}
+                            disabled={locating}
+                            className="px-4 py-2 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            {locating ? 'Locating…' : 'Use current location'}
+                          </button>
+                        </div>
+
+                        {gpsStatus && <FeedbackBanner variant="info">{gpsStatus}</FeedbackBanner>}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-xs uppercase tracking-wider text-zinc-500 font-bold">Latitude</label>
+                            <input
+                              type="number"
+                              step="0.000001"
+                              value={form.latitude}
+                              onChange={(e) => onChange('latitude', e.target.value)}
+                              placeholder="e.g. 59.437000"
+                              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-2.5 text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all text-sm"
+                            />
+                            {errors.latitude && <span className="text-red-300 text-xs">{errors.latitude}</span>}
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs uppercase tracking-wider text-zinc-500 font-bold">Longitude</label>
+                            <input
+                              type="number"
+                              step="0.000001"
+                              value={form.longitude}
+                              onChange={(e) => onChange('longitude', e.target.value)}
+                              placeholder="e.g. 24.753600"
+                              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-2.5 text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all text-sm"
+                            />
+                            {errors.longitude && <span className="text-red-300 text-xs">{errors.longitude}</span>}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs uppercase tracking-wider text-zinc-500 font-bold">Search radius (km)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={500}
+                            value={form.maxDistanceKm}
+                            onChange={(e) => onChange('maxDistanceKm', e.target.value)}
+                            placeholder="e.g. 25"
                             className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-2.5 text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all text-sm"
-                         />
-                         {errors.city && <span className="text-rose-500 text-xs">{errors.city}</span>}
-                    </div>
+                          />
+                          {errors.maxDistanceKm && <span className="text-red-300 text-xs">{errors.maxDistanceKm}</span>}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs uppercase tracking-wider text-zinc-500 font-bold">Age</label>
+                        <input
+                           type="number"
+                           min={13}
+                           max={120}
+                           value={form.age}
+                           onChange={(e) => onChange('age', e.target.value)}
+                           placeholder="e.g. 27"
+                           className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-2.5 text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all text-sm"
+                        />
+                        {errors.age && <span className="text-red-300 text-xs">{errors.age}</span>}
+                      </div>
 
                     {renderMultiSelect('lookFor', lookForOptions, 'Looking For (Max 3)')}
                     {renderMultiSelect('codingStyle', codingStyleOptions, 'Work Style (Max 3)')}
@@ -307,10 +459,10 @@ const SetupBio: React.FC = () => {
               </div>
           </div>
 
-          {/* Right Column: Status + Actions */}
-          <div className="lg:col-span-1">
-             <div className="sticky top-6 space-y-4">
-             <div className="glass-panel p-6 rounded-2xl border border-white/5 text-center">
+        {/* Live completion summary */}
+        <div className="lg:col-span-1">
+          <div className="sticky top-6 space-y-4">
+            <div className="glass-panel p-6 rounded-2xl border border-white/5 text-center">
                  <div className="relative inline-flex items-center justify-center p-4">
                     <svg width={ringSize} height={ringSize} className="-rotate-90">
                         <circle
@@ -352,7 +504,6 @@ const SetupBio: React.FC = () => {
                  </div>
              </div>
 
-             {/* Save / Cancel */}
              <div className="glass-panel p-4 rounded-2xl border border-white/5 flex flex-col gap-2">
                 <button
                     type="submit"

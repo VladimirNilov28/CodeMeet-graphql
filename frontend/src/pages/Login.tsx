@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import api from '../api/axios';
+import api, { getApiErrorMessage } from '../api/axios';
+import FeedbackBanner from '../components/FeedbackBanner.tsx';
 
 const Login: React.FC = () => {
     const navigate = useNavigate();
@@ -16,7 +17,6 @@ const Login: React.FC = () => {
 
         try {
             const res = await api.post('/auth/login', { identifier, password });
-            // Handle both string token (legacy) and object token
             const token = typeof res.data === 'string' ? res.data : res.data?.token;
             
             if (!token) {
@@ -25,10 +25,9 @@ const Login: React.FC = () => {
             
             localStorage.setItem('token', token);
             navigate('/dashboard');
-        } catch (err: any) {
-            console.error(err);
-            const msg = err.response?.data?.message || err.response?.data || 'Invalid credentials';
-            setError(typeof msg === 'string' ? msg : 'Login failed');
+        } catch (error: unknown) {
+            console.error(error);
+            setError(getApiErrorMessage(error, 'Invalid credentials'));
         } finally {
             setLoading(false);
         }
@@ -36,7 +35,6 @@ const Login: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4 relative overflow-hidden">
-             {/* Background Effects */}
              <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
                 <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[100px]"></div>
                 <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 rounded-full blur-[100px]"></div>
@@ -49,9 +47,9 @@ const Login: React.FC = () => {
                 </div>
 
                 {error && (
-                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-4 py-3 rounded-xl text-sm mb-6 text-center">
+                    <FeedbackBanner variant="error" className="mb-6 text-center">
                         {error}
-                    </div>
+                    </FeedbackBanner>
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-5">

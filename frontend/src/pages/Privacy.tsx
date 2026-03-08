@@ -19,18 +19,26 @@ const Privacy: React.FC = () => {
 
       <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4 text-sm text-zinc-300 leading-relaxed">
         <p>
-          CodeMeet processes account, profile, and messaging metadata required to provide core networking features.
-          Authentication relies on secure JSON Web Tokens stored in the browser.
+          CodeMeet stores the account details needed to run the platform, including your email address, display name,
+          bio fields, GPS coordinates, match radius, profile text, connection state, and chat messages. When you upload a
+          profile picture or message attachment, the file is stored by the backend and linked to your account or conversation.
         </p>
         <p>
-          Public profile views only expose public fields. Access to user data is constrained by backend authorization rules.
-          Sensitive identifiers and credentials are never rendered in public profile pages.
+          Authentication is handled with a JSON Web Token stored in the browser so the frontend can call the API on your
+          behalf. Public profile requests are filtered by backend authorization rules, and blocked users cannot view your
+          profile or interact with you.
         </p>
         <p>
-          You can manage local privacy preferences in Settings. Some controls may require backend policy enforcement
-          to apply globally across all clients.
+          The privacy controls in Settings are saved to your account. If you hide your avatar, age, GPS-based match radius,
+          or last-seen data, those fields are removed from public profile responses and connection presence snapshots shown to
+          other signed-in users. Exact GPS coordinates are never returned from public profile endpoints.
         </p>
-        <p className="text-zinc-500">Last updated: March 3, 2026</p>
+        <p>
+          You can update or remove profile content at any time from the dashboard and settings screens. Background images
+          and other appearance-only choices that are marked as browser-local stay in your current browser instead of being
+          shared across devices.
+        </p>
+        <p className="text-zinc-500">Last updated: March 7, 2026</p>
       </div>
 
       <div className="text-xs text-zinc-500">© {new Date().getFullYear()} CodeMeet. All rights reserved.</div>
