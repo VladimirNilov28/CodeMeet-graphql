@@ -2,11 +2,31 @@ import uuid
 import random
 from datetime import datetime, timedelta, timezone
 import subprocess
+import shutil
+import os
+from pathlib import Path
 
-# --- CONFIGURATION ---
-CONTAINER_NAME = "web-database-1"
+# --- LOAD ENVIRONMENT VARIABLES ---
+# Try to find .env in backend/ (works if script is in root OR in /scripts)
+env_path = Path(__file__).resolve().parent / 'backend' / '.env'
+if not env_path.exists():
+    env_path = Path(__file__).resolve().parent.parent / 'backend' / '.env'
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=env_path)
+except ImportError:
+    pass # If inside Docker, environment variables are already injected
+
+# --- CONFIGURATION (With Defaults) ---
+# For host 'docker exec' commands:
+CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "web-database-1")
+# For internal Docker network 'psql' commands:
+NETWORK_HOST = os.getenv("DB_NETWORK_HOST", "database")
+
 DB_NAME = "codemeet_db"
-DB_USER = "postgres"
+DB_USER = os.getenv("POSTGRES_USER", "postgres")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "12345")
 
 # --- MOCK DATA POOLS ---
 LANGUAGES = ["Java", "Python", "TypeScript", "Go", "Rust", "C#", "C++", "JavaScript", "Kotlin"]
@@ -32,7 +52,6 @@ def generate_sql(num_users=100):
 
     user_ids = []
 
-    # 1. Generate Users, Profiles, Bios
     for i in range(num_users):
         u_id = str(uuid.uuid4())
         user_ids.append(u_id)
@@ -44,7 +63,6 @@ def generate_sql(num_users=100):
         name = f"{f_name} {l_name} {suffix}"
         last_seen = (datetime.now(timezone.utc) - timedelta(days=random.randint(0, 5))).strftime('%Y-%m-%d %H:%M:%S%z')
 
-        # New boolean columns based on the latest schema updates
         hide_location = random.choice(['true', 'false'])
         hide_age = random.choice(['true', 'false'])
 
@@ -65,17 +83,13 @@ def generate_sql(num_users=100):
             f"'{random.choice(LOOK_FOR)}', '{random.choice(OS)}', '{random.choice(LANGUAGES)}', {latitude}, {longitude}, {max_distance_km}, {age}, '{u_id}')"
         )
 
-    # 2. Generate Connections
     accepted_pairs = set()
     for i in range(num_users):
-        # Connect with 2-5 random other users
         num_connections = random.randint(2, 5)
         targets = random.sample([j for j in range(num_users) if j != i], num_connections)
 
         for target_idx in targets:
             u1, u2 = user_ids[i], user_ids[target_idx]
-
-            # Ensure we don't duplicate connection pairs in reverse
             pair = tuple(sorted([u1, u2]))
             if pair in accepted_pairs:
                 continue
@@ -89,7 +103,6 @@ def generate_sql(num_users=100):
             if status == 'ACCEPTED':
                 accepted_pairs.add(pair)
 
-    # 3. Generate Messages for Accepted Connections
     for u1, u2 in accepted_pairs:
         num_messages = random.randint(1, 8)
         for _ in range(num_messages):
@@ -100,7 +113,6 @@ def generate_sql(num_users=100):
             is_read = random.choice(['true', 'false'])
             messages_sql.append(f"('{m_id}', '{sender}', '{recipient}', '{content}', '{timestamp}', {is_read})")
 
-    # Build final SQL string
     sql = "BEGIN;\n"
     sql += "INSERT INTO users (id, email, last_seen_at, name, password, profile_picture, role, hide_location, hide_age) VALUES\n" + ",\n".join(users_sql) + ";\n\n"
     sql += "INSERT INTO profiles (id, about_me, user_id) VALUES\n" + ",\n".join(profiles_sql) + ";\n\n"
@@ -119,10 +131,18 @@ def seed():
     print(f"🚀 Starting seed process for {DB_NAME}...")
     sql_content = generate_sql(100)
 
-    command = [
-        "docker", "exec", "-i", CONTAINER_NAME,
-        "psql", "-v", "ON_ERROR_STOP=1", "-U", DB_USER, "-d", DB_NAME
-    ]
+    if shutil.which("docker"):
+        print("💻 Running from Host: Using 'docker exec'")
+        command = [
+            "docker", "exec", "-i", CONTAINER_NAME,
+            "psql", "-v", "ON_ERROR_STOP=1", "-U", DB_USER, "-d", DB_NAME
+        ]
+    else:
+        print("🐳 Running from Container: Using network 'psql'")
+        os.environ["PGPASSWORD"] = DB_PASSWORD
+        command = [
+            "psql", "-h", NETWORK_HOST, "-U", DB_USER, "-d", DB_NAME, "-v", "ON_ERROR_STOP=1"
+        ]
 
     try:
         process = subprocess.run(command, input=sql_content.encode('utf-8'), capture_output=True)
@@ -130,8 +150,10 @@ def seed():
         if process.returncode != 0:
             print(f"❌ Error details:\n{process.stderr.decode('utf-8').strip()}")
         else:
-            print(f"✅ Successfully seeded mock data (users, profiles, bios, connections, and messages) into '{DB_NAME}'.")
+            print(f"✅ Successfully seeded mock data into '{DB_NAME}'.")
 
+    except FileNotFoundError:
+        print("❌ Missing Tool: Could not find 'docker' or 'psql'.")
     except Exception as e:
         print(f"❌ Runtime Error: {e}")
 

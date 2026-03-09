@@ -19,8 +19,10 @@ RUN mvn clean package -DskipTests
 
 # pRuntime image
 FROM eclipse-temurin:21-jre-alpine
-RUN apk add --no-cache python3 py3-pip
+RUN apk add --no-cache python3 py3-pip postgresql-client
+RUN pip install --no-cache-dir --break-system-packages python-dotenv
 WORKDIR /app
+COPY scripts/ ./scripts/
 # Use a wildcard to find the jar regardless of version name
 COPY --from=backend-build /build/backend/target/*.jar app.jar
 EXPOSE 8080

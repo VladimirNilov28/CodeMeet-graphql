@@ -1,8 +1,25 @@
 import subprocess
+import shutil
+import os
+from pathlib import Path
 
-CONTAINER_NAME = "web-database-1"
+# --- LOAD ENVIRONMENT VARIABLES ---
+env_path = Path(__file__).resolve().parent / 'backend' / '.env'
+if not env_path.exists():
+    env_path = Path(__file__).resolve().parent.parent / 'backend' / '.env'
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=env_path)
+except ImportError:
+    pass
+
+# --- CONFIGURATION (With Defaults) ---
+CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "web-database-1")
+NETWORK_HOST = os.getenv("DB_NETWORK_HOST", "database")
 DB_NAME = "codemeet_db"
-DB_USER = "postgres"
+DB_USER = os.getenv("POSTGRES_USER", "postgres")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "12345")
 
 ADMIN_EMAIL = "admin@test.com"
 ADMIN_NAME = "Admin"
@@ -44,10 +61,18 @@ def init_admin():
     print(f"🚀 Initializing admin user in '{DB_NAME}'...")
     sql = generate_sql()
 
-    command = [
-        "docker", "exec", "-i", CONTAINER_NAME,
-        "psql", "-v", "ON_ERROR_STOP=1", "-U", DB_USER, "-d", DB_NAME
-    ]
+    if shutil.which("docker"):
+        print("💻 Running from Host: Using 'docker exec'")
+        command = [
+            "docker", "exec", "-i", CONTAINER_NAME,
+            "psql", "-v", "ON_ERROR_STOP=1", "-U", DB_USER, "-d", DB_NAME
+        ]
+    else:
+        print("🐳 Running from Container: Using network 'psql'")
+        os.environ["PGPASSWORD"] = DB_PASSWORD
+        command = [
+            "psql", "-h", NETWORK_HOST, "-U", DB_USER, "-d", DB_NAME, "-v", "ON_ERROR_STOP=1"
+        ]
 
     try:
         process = subprocess.run(command, input=sql.encode("utf-8"), capture_output=True)
@@ -62,6 +87,8 @@ def init_admin():
                 print(errors)
             print("✅ Done.")
 
+    except FileNotFoundError:
+        print("❌ Missing Tool: Could not find 'docker' or 'psql'.")
     except Exception as e:
         print(f"❌ Runtime Error: {e}")
 

@@ -4,14 +4,17 @@ services:
     restart: always
     ports:
       - "5432:5432"
+    env_file:
+      - path: ./.env
+        required: false
     environment:
-      POSTGRES_USER: "postgres"
-      POSTGRES_PASSWORD: "12345"
-      POSTGRES_DB: "codemeet_db"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12345}
+      POSTGRES_DB: ${POSTGRES_DB:-codemeet_db}
     volumes:
       - db_data:/var/lib/postgresql/data/
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -24,10 +27,13 @@ services:
       database:
         condition: service_healthy
     restart: on-failure
+    env_file:
+      - path: ./.env
+        required: false
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://database:5432/codemeet_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: 12345
+      DATASOURCE_URL: ${DATASOURCE_URL:-jdbc:postgresql://database:5432/codemeet_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12345}
 
   adminer:
     image: adminer:latest

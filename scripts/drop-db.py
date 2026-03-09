@@ -1,8 +1,27 @@
 import subprocess
 import sys
+import shutil
+import os
+from pathlib import Path
 
-# TRUNCATE мгновенно очищает таблицы, оставляя их структуру.
-# CASCADE автоматически очистит связанные таблицы (profiles, bios), если они ссылаются на users.
+# --- LOAD ENVIRONMENT VARIABLES ---
+env_path = Path(__file__).resolve().parent / 'backend' / '.env'
+if not env_path.exists():
+    env_path = Path(__file__).resolve().parent.parent / 'backend' / '.env'
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=env_path)
+except ImportError:
+    pass
+
+# --- CONFIGURATION (With Defaults) ---
+CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "web-database-1")
+NETWORK_HOST = os.getenv("DB_NETWORK_HOST", "database")
+DB_NAME = "codemeet_db"
+DB_USER = os.getenv("POSTGRES_USER", "postgres")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "12345")
+
 SQL_COMMAND = """
               TRUNCATE TABLE profiles, bios, users CASCADE; \
               """
@@ -16,13 +35,22 @@ def confirm_action():
         sys.exit(0)
 
 def clear_database():
-    command = [
-        "docker", "exec", "-i", "web-database-1",
-        "psql", "-U", "postgres", "-d", "codemeet_db"
-    ]
+    print("⏳ Clearing data from tables...")
+
+    if shutil.which("docker"):
+        print("💻 Running from Host: Using 'docker exec'")
+        command = [
+            "docker", "exec", "-i", CONTAINER_NAME,
+            "psql", "-U", DB_USER, "-d", DB_NAME
+        ]
+    else:
+        print("🐳 Running from Container: Using network 'psql'")
+        os.environ["PGPASSWORD"] = DB_PASSWORD
+        command = [
+            "psql", "-h", NETWORK_HOST, "-U", DB_USER, "-d", DB_NAME
+        ]
 
     try:
-        print("⏳ Clearing data from tables...")
         subprocess.run(
             command,
             input=SQL_COMMAND.encode('utf-8'),
@@ -30,6 +58,9 @@ def clear_database():
             capture_output=True
         )
         print("✅ Success! All tables are now empty and ready for new data.")
+    except FileNotFoundError:
+        print("❌ Missing Tool: Could not find 'docker' or 'psql'.")
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"❌ Error executing command.")
         if e.stderr:
