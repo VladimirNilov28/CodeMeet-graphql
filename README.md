@@ -8,6 +8,10 @@
 
 CodeMeet is a social network built for coders. Create a profile, describe your tech stack, and let the recommendation engine find people worth knowing — then chat with them in real time.
 
+## GraphQL API
+
+This project exposes a GraphQL API alongside the REST API. The canonical GraphQL documentation and quick-start (queries, subscriptions, playground info) is in `web/README_GRAPHQL.md` — see that file for GraphQL-specific usage and examples.
+
 **Key capabilities:**
 - Secure JWT + bcrypt authentication
 - Rich developer profiles (tech stack, experience, OS, coding style, location, and more)
