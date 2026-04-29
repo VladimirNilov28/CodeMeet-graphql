@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@graphql-mesh/compose-cli": "^1.5.31"
+  }
+}
