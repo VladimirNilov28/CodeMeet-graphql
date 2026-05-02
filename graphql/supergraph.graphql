@@ -1,0 +1,520 @@
+schema
+    @link(url: "https://specs.apollo.dev/link/v1.0")
+    @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
+    
+    
+    
+    
+    
+    
+    @link(
+  url: "https://the-guild.dev/graphql/mesh/spec/v1.0"
+  import: ["@dictionary", "@httpOperation", "@transport", "@extraSchemaDefinitionDirective"]
+)
+  {
+    query: Query
+    mutation: Mutation
+    
+  }
+
+  
+    directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+    directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+    
+      directive @join__field(
+        graph: join__Graph
+        requires: join__FieldSet
+        provides: join__FieldSet
+        type: String
+        external: Boolean
+        override: String
+        usedOverridden: Boolean
+        
+        
+      ) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+    
+    
+
+    directive @join__implements(
+      graph: join__Graph!
+      interface: String!
+    ) repeatable on OBJECT | INTERFACE
+
+    directive @join__type(
+      graph: join__Graph!
+      key: join__FieldSet
+      extension: Boolean! = false
+      resolvable: Boolean! = true
+      isInterfaceObject: Boolean! = false
+    ) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+    directive @join__unionMember(
+      graph: join__Graph!
+      member: String!
+    ) repeatable on UNION
+
+    scalar join__FieldSet
+    
+  
+  
+  directive @link(
+    url: String
+    as: String
+    for: link__Purpose
+    import: [link__Import]
+  ) repeatable on SCHEMA
+
+  scalar link__Import
+
+  enum link__Purpose {
+    """
+    `SECURITY` features provide metadata necessary to securely resolve fields.
+    """
+    SECURITY
+
+    """
+    `EXECUTION` features provide metadata necessary for operation execution.
+    """
+    EXECUTION
+  }
+
+  
+  
+  
+  
+  
+  
+  
+enum join__Graph {
+  REST_API @join__graph(name: "REST_API", url: "http://localhost:8080") 
+}
+
+directive @dictionary(subgraph: String)  repeatable on FIELD_DEFINITION
+
+directive @httpOperation(
+  subgraph: String
+  path: String
+  operationSpecificHeaders: [[String]]
+  httpMethod: HTTPMethod
+  isBinary: Boolean
+  requestBaseBody: ObjMap
+  queryParamArgMap: ObjMap
+  queryStringOptionsByParam: ObjMap
+  jsonApiFields: Boolean
+  queryStringOptions: ObjMap
+) repeatable on FIELD_DEFINITION
+
+directive @transport(
+  subgraph: String
+  kind: String
+  location: String
+  headers: [[String]]
+  queryStringOptions: ObjMap
+  queryParams: [[String]]
+) repeatable on SCHEMA
+
+directive @extraSchemaDefinitionDirective(directives: _DirectiveExtensions)  repeatable on OBJECT
+
+"""
+A field whose value is a generic Universally Unique Identifier: https://en.wikipedia.org/wiki/Universally_unique_identifier.
+"""
+scalar UUID @join__type(graph: REST_API) 
+
+"""
+A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.
+"""
+scalar DateTime @join__type(graph: REST_API) 
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSON @join__type(graph: REST_API)  @specifiedBy(
+  url: "http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf"
+)
+
+"""
+The `BigInt` scalar type represents non-fractional signed whole numeric values.
+"""
+scalar BigInt @join__type(graph: REST_API) 
+
+"""
+The `File` scalar type represents a file upload.
+"""
+scalar File @join__type(graph: REST_API) 
+
+scalar ObjMap @join__type(graph: REST_API) 
+
+scalar _DirectiveExtensions @join__type(graph: REST_API) 
+
+type Query @extraSchemaDefinitionDirective(
+  directives: {transport: [{subgraph: "REST_API", kind: "rest", location: "http://localhost:8080", headers: [["X-Api-Key", "123456"]]}]}
+) @join__type(graph: REST_API)  {
+  getMyProfile: ProfileDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/profile"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getMyPrivacySettings: PrivacySettingsDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/privacy"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getMyBio: BioDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/bio"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getUserById(id: UUID!) : PublicUserDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/users/{args.id}"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getUserProfileById(id: UUID!) : ProfileDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/users/{args.id}/profile"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getUserBioById(id: UUID!) : BioDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/users/{args.id}/bio"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getRecommendations: [JSON] @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/recommendations"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getRecommendationScore(userId: UUID!) : RecommendationDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/recommendations/{args.userId}/score"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getSkippedRecommendations: [JSON] @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/recommendations/skipped"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getCurrentUser: UserResponse @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getConnections: [JSON] @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/connections"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getPendingConnections: [JSON] @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/connections/pending"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getPresenceForConnections: getPresenceForConnections_200_response @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/chat/presence"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getChatPartners: [JSON] @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/chat/partners"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+  getChatHistory(partnerId: UUID!, page: Int, size: Int = 20) : PageMessageDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/chat/history/{args.partnerId}"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+    queryParamArgMap: "{\"page\":\"page\",\"size\":\"size\"}"
+  )
+  getBlockedUsers: [JSON] @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/block"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: GET
+  )
+}
+
+type ProfileDto @join__type(graph: REST_API)  {
+  id: UUID
+  aboutMe: String
+}
+
+type PrivacySettingsDto @join__type(graph: REST_API)  {
+  hideAvatar: Boolean
+  hideLocation: Boolean
+  hideAge: Boolean
+  hideLastSeen: Boolean
+}
+
+type BioDto @join__type(graph: REST_API)  {
+  id: UUID
+  primaryLanguage: String
+  experienceLevel: String
+  lookFor: String
+  preferredOs: String
+  codingStyle: String
+  city: String
+  latitude: Float
+  longitude: Float
+  maxDistanceKm: Int
+  locationVisible: Boolean
+  age: Int
+  ageVisible: Boolean
+}
+
+type PublicUserDto @join__type(graph: REST_API)  {
+  id: UUID
+  name: String
+  profilePicture: String
+  avatarVisible: Boolean
+  lastSeenAt: DateTime
+  lastSeenVisible: Boolean
+}
+
+type RecommendationDto @join__type(graph: REST_API)  {
+  id: UUID
+  matchScore: Int
+  distanceKm: Float
+}
+
+type UserResponse @join__type(graph: REST_API)  {
+  id: UUID
+  name: String
+  profilePicture: String
+}
+
+type getPresenceForConnections_200_response @join__type(graph: REST_API)  {
+  additionalProperties: [PresenceStatusDto_entry] @dictionary(subgraph: "REST_API") 
+}
+
+type PresenceStatusDto_entry @join__type(graph: REST_API)  {
+  key: ID!
+  value: PresenceStatusDto
+}
+
+type PresenceStatusDto @join__type(graph: REST_API)  {
+  online: Boolean
+  lastSeenAt: DateTime
+  lastSeenVisible: Boolean
+}
+
+type PageMessageDto @join__type(graph: REST_API)  {
+  totalElements: BigInt
+  totalPages: Int
+  pageable: PageableObject
+  size: Int
+  content: [MessageDto]
+  number: Int
+  sort: SortObject
+  numberOfElements: Int
+  first: Boolean
+  last: Boolean
+  empty: Boolean
+}
+
+type PageableObject @join__type(graph: REST_API)  {
+  paged: Boolean
+  pageNumber: Int
+  pageSize: Int
+  offset: BigInt
+  sort: SortObject
+  unpaged: Boolean
+}
+
+type SortObject @join__type(graph: REST_API)  {
+  sorted: Boolean
+  empty: Boolean
+  unsorted: Boolean
+}
+
+type MessageDto @join__type(graph: REST_API)  {
+  id: UUID
+  senderId: UUID
+  recipientId: UUID
+  content: String
+  attachmentUrl: String
+  attachmentName: String
+  timestamp: DateTime
+  isRead: Boolean
+}
+
+type Mutation @join__type(graph: REST_API)  {
+  skipRecommendation(userId: UUID!) : JSON @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/recommendations/skip/{args.userId}"
+    httpMethod: POST
+  )
+  undoSkip(userId: UUID!) : JSON @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/recommendations/skip/{args.userId}"
+    httpMethod: DELETE
+  )
+  updateMyProfile(input: ProfileDto_Input) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/profile"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+  )
+  uploadProfilePicture(input: uploadProfilePicture_request_Input) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/profile-picture"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+  )
+  removeProfilePicture: String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/profile-picture"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: DELETE
+  )
+  updateMyPrivacySettings(input: PrivacySettingsDto_Input) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/privacy"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+  )
+  updateMyBio(input: BioDto_Input) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/bio"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+  )
+  updateMyAlias(input: JSON) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/me/alias"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+  )
+  rejectConnection(connectionId: UUID!) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/connections/{args.connectionId}/reject"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: POST
+  )
+  acceptConnection(connectionId: UUID!) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/connections/{args.connectionId}/accept"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: POST
+  )
+  sendConnectionRequest(recipientId: UUID!) : [JSON] @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/connections/request/{args.recipientId}"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: POST
+  )
+  uploadAttachment(recipientId: UUID!, content: String, input: uploadAttachment_request_Input) : MessageDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/chat/upload/{args.recipientId}"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+    queryParamArgMap: "{\"content\":\"content\"}"
+  )
+  sendRestMessage(recipientId: UUID!, input: JSON) : MessageDto @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/chat/send/{args.recipientId}"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+  )
+  markAsRead(senderId: UUID!) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/chat/read/{args.senderId}"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: POST
+  )
+  blockUser(userId: UUID!) : JSON @httpOperation(subgraph: "REST_API", path: "/api/block/{args.userId}", httpMethod: POST) 
+  unblockUser(userId: UUID!) : JSON @httpOperation(subgraph: "REST_API", path: "/api/block/{args.userId}", httpMethod: DELETE) 
+  register(input: RegisterRequest_Input) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/auth/register"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+  )
+  login(input: LoginRequest_Input) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/auth/login"
+    operationSpecificHeaders: [["Content-Type", "application/json"], ["accept", "*/*"]]
+    httpMethod: POST
+  )
+  disconnect(userId: UUID!) : String @httpOperation(
+    subgraph: "REST_API"
+    path: "/api/connections/disconnect/{args.userId}"
+    operationSpecificHeaders: [["accept", "*/*"]]
+    httpMethod: DELETE
+  )
+}
+
+enum HTTPMethod @join__type(graph: REST_API)  {
+  GET @join__enumValue(graph: REST_API) 
+  HEAD @join__enumValue(graph: REST_API) 
+  POST @join__enumValue(graph: REST_API) 
+  PUT @join__enumValue(graph: REST_API) 
+  DELETE @join__enumValue(graph: REST_API) 
+  CONNECT @join__enumValue(graph: REST_API) 
+  OPTIONS @join__enumValue(graph: REST_API) 
+  TRACE @join__enumValue(graph: REST_API) 
+  PATCH @join__enumValue(graph: REST_API) 
+}
+
+input ProfileDto_Input @join__type(graph: REST_API)  {
+  id: UUID
+  aboutMe: String
+}
+
+input uploadProfilePicture_request_Input @join__type(graph: REST_API)  {
+  file: File!
+}
+
+input PrivacySettingsDto_Input @join__type(graph: REST_API)  {
+  hideAvatar: Boolean
+  hideLocation: Boolean
+  hideAge: Boolean
+  hideLastSeen: Boolean
+}
+
+input BioDto_Input @join__type(graph: REST_API)  {
+  id: UUID
+  primaryLanguage: String
+  experienceLevel: String
+  lookFor: String
+  preferredOs: String
+  codingStyle: String
+  city: String
+  latitude: Float
+  longitude: Float
+  maxDistanceKm: Int
+  locationVisible: Boolean
+  age: Int
+  ageVisible: Boolean
+}
+
+input uploadAttachment_request_Input @join__type(graph: REST_API)  {
+  file: File!
+}
+
+input RegisterRequest_Input @join__type(graph: REST_API)  {
+  name: String
+  email: String
+  password: String
+}
+
+input LoginRequest_Input @join__type(graph: REST_API)  {
+  identifier: String
+  password: String
+}

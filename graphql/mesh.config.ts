@@ -1,14 +1,21 @@
-import { defineConfig, loadGraphQLHTTPSubgraph } from '@graphql-mesh/compose-cli'
+import { defineConfig } from '@graphql-mesh/compose-cli'
+import { loadOpenAPISubgraph } from '@omnigraph/openapi'
+import dotenv from 'dotenv'
+
+dotenv.config({ path: '../.env' })
 
 export const composeConfig = defineConfig({
-    subgraphs: [
-        {
-            sourceHandler: loadGraphQLHTTPSubgraph('Countries', {
-                endpoint: 'https://countries.trevorblades.com'
-            })
+  subgraphs: [
+    {
+      sourceHandler: loadOpenAPISubgraph('REST_API', {
+        source: 'http://localhost:8080/v3/api-docs',
+        schemaHeaders: {
+          'X-Api-Key': process.env.API_KEY ?? ''
+        },
+        operationHeaders: {
+          'X-Api-Key': process.env.API_KEY ?? ''
         }
-    ]
-});
-
-
-//TODO go throw https://the-guild.dev/graphql/mesh/v1/getting-started tutorial
+      })
+    }
+  ]
+})

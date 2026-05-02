@@ -1,4 +1,4 @@
-# CodeMeet
+d# CodeMeet
 
 > A full-stack platform that connects developers, programmers, and hobbyists based on their programming languages, interests, and personal characteristics.
 
