@@ -149,7 +149,7 @@ scalar ObjMap @join__type(graph: REST_API)
 scalar _DirectiveExtensions @join__type(graph: REST_API) 
 
 type Query @extraSchemaDefinitionDirective(
-  directives: {transport: [{subgraph: "REST_API", kind: "rest", location: "http://localhost:8080", headers: [["X-Api-Key", "123456"]]}]}
+  directives: {transport: [{subgraph: "REST_API", kind: "rest", location: "http://localhost:8080", headers: [["X-Api-Key", "123456"], ["Authorization", "{context.headers.authorization}"]]}]}
 ) @join__type(graph: REST_API)  {
   getMyProfile: ProfileDto @httpOperation(
     subgraph: "REST_API"

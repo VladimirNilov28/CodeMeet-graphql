@@ -16,7 +16,7 @@ except ImportError:
     pass
 
 # --- CONFIGURATION (With Defaults) ---
-CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "web-database-1")
+CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "graphql-database-1")
 NETWORK_HOST = os.getenv("DB_NETWORK_HOST", "database")
 DB_NAME = "codemeet_db"
 DB_USER = os.getenv("POSTGRES_USER", "postgres")

@@ -13,7 +13,8 @@ export const composeConfig = defineConfig({
           'X-Api-Key': process.env.API_KEY ?? ''
         },
         operationHeaders: {
-          'X-Api-Key': process.env.API_KEY ?? ''
+          'X-Api-Key': process.env.API_KEY ?? '',
+          'Authorization': '{context.headers.authorization}'
         }
       })
     }

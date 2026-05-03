@@ -1,8 +1,15 @@
 {
   "dependencies": {
+    "@graphql-hive/gateway": "^2.6.0",
     "@graphql-mesh/compose-cli": "^1.5.31",
+    "@graphql-mesh/transport-rest": "^0.9.39",
     "@omnigraph/openapi": "^0.109.52",
     "@types/node": "^25.6.0",
     "dotenv": "^17.4.2"
+  },
+  "scripts": {
+    "start": "hive-gateway supergraph",
+    "dev": "hive-gateway supergraph",
+    "compose": "mesh-compose -o supergraph.graphql"
   }
 }

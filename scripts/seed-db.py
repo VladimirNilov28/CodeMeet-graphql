@@ -20,7 +20,7 @@ except ImportError:
 
 # --- CONFIGURATION (With Defaults) ---
 # For host 'docker exec' commands:
-CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "web-database-1")
+CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "graphql-database-1")
 # For internal Docker network 'psql' commands:
 NETWORK_HOST = os.getenv("DB_NETWORK_HOST", "database")
 

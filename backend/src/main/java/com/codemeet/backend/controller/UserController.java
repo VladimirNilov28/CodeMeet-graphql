@@ -35,7 +35,7 @@ public class UserController {
     private static final int MAX_BIO_AGE = 120;
     private static final int MIN_RADIUS_KM = 1;
     private static final int MAX_RADIUS_KM = 500;
-    
+
     private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
     private final BioRepository bioRepository;
@@ -111,14 +111,20 @@ public class UserController {
 
     @GetMapping("/me/profile")
     public ResponseEntity<ProfileDto> getMyProfile(Authentication authentication) {
+        System.out.println(">>> getMyProfile called");
         User user = getAuthenticatedUser(authentication);
-        
-        Profile profile = profileRepository.findByUser(user)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not set up yet"));
+        System.out.println(">>> user: " + user.getEmail());
+
+        Optional<Profile> profileOpt = profileRepository.findByUser(user);
+        System.out.println(">>> profile present: " + profileOpt.isPresent());
+
+        Profile profile = profileOpt.orElseThrow(() ->
+            new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not set up yet"));
 
         ProfileDto dto = new ProfileDto();
         dto.setId(user.getId());
         dto.setAboutMe(profile.getAboutMe());
+        System.out.println(">>> returning dto: " + dto.getId() + " / " + dto.getAboutMe());
         return ResponseEntity.ok(dto);
     }
 
