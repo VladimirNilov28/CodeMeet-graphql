@@ -9,7 +9,7 @@ schema
     
     @link(
   url: "https://the-guild.dev/graphql/mesh/spec/v1.0"
-  import: ["@dictionary", "@httpOperation", "@transport", "@extraSchemaDefinitionDirective"]
+  import: ["@dictionary", "@httpOperation", "@transport", "@source", "@extraSchemaDefinitionDirective"]
 )
   {
     query: Query
@@ -115,6 +115,8 @@ directive @transport(
   queryParams: [[String]]
 ) repeatable on SCHEMA
 
+directive @source(name: String!, type: String, subgraph: String!)  repeatable on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | INTERFACE | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+
 directive @extraSchemaDefinitionDirective(directives: _DirectiveExtensions)  repeatable on OBJECT
 
 """
@@ -151,48 +153,48 @@ scalar _DirectiveExtensions @join__type(graph: REST_API)
 type Query @extraSchemaDefinitionDirective(
   directives: {transport: [{subgraph: "REST_API", kind: "rest", location: "http://localhost:8080", headers: [["X-Api-Key", "123456"], ["Authorization", "{context.headers.authorization}"]]}]}
 ) @join__type(graph: REST_API)  {
-  getMyProfile: ProfileDto @httpOperation(
+  myProfile: ProfileDto @httpOperation(
     subgraph: "REST_API"
     path: "/api/me/profile"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
-  )
+  ) @source(name: "getMyProfile", type: "ProfileDto", subgraph: "REST_API") 
   getMyPrivacySettings: PrivacySettingsDto @httpOperation(
     subgraph: "REST_API"
     path: "/api/me/privacy"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
   )
-  getMyBio: BioDto @httpOperation(
+  myBio: BioDto @httpOperation(
     subgraph: "REST_API"
     path: "/api/me/bio"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
-  )
-  getUserById(id: UUID!) : PublicUserDto @httpOperation(
+  ) @source(name: "getMyBio", type: "BioDto", subgraph: "REST_API") 
+  user(id: UUID!) : PublicUserDto @httpOperation(
     subgraph: "REST_API"
     path: "/api/users/{args.id}"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
-  )
-  getUserProfileById(id: UUID!) : ProfileDto @httpOperation(
+  ) @source(name: "getUserById", type: "PublicUserDto", subgraph: "REST_API") 
+  profile(id: UUID!) : ProfileDto @httpOperation(
     subgraph: "REST_API"
     path: "/api/users/{args.id}/profile"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
-  )
-  getUserBioById(id: UUID!) : BioDto @httpOperation(
+  ) @source(name: "getUserProfileById", type: "ProfileDto", subgraph: "REST_API") 
+  bio(id: UUID!) : BioDto @httpOperation(
     subgraph: "REST_API"
     path: "/api/users/{args.id}/bio"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
-  )
-  getRecommendations: [JSON] @httpOperation(
+  ) @source(name: "getUserBioById", type: "BioDto", subgraph: "REST_API") 
+  recommendations: [JSON] @httpOperation(
     subgraph: "REST_API"
     path: "/api/recommendations"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
-  )
+  ) @source(name: "getRecommendations", type: "[JSON]", subgraph: "REST_API") 
   getRecommendationScore(userId: UUID!) : RecommendationDto @httpOperation(
     subgraph: "REST_API"
     path: "/api/recommendations/{args.userId}/score"
@@ -205,18 +207,18 @@ type Query @extraSchemaDefinitionDirective(
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
   )
-  getCurrentUser: UserResponse @httpOperation(
+  me: UserResponse @httpOperation(
     subgraph: "REST_API"
     path: "/api/me"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
-  )
-  getConnections: [JSON] @httpOperation(
+  ) @source(name: "getCurrentUser", type: "UserResponse", subgraph: "REST_API") 
+  connections: [JSON] @httpOperation(
     subgraph: "REST_API"
     path: "/api/connections"
     operationSpecificHeaders: [["accept", "*/*"]]
     httpMethod: GET
-  )
+  ) @source(name: "getConnections", type: "[JSON]", subgraph: "REST_API") 
   getPendingConnections: [JSON] @httpOperation(
     subgraph: "REST_API"
     path: "/api/connections/pending"
@@ -318,29 +320,29 @@ type PageMessageDto @join__type(graph: REST_API)  {
   totalElements: BigInt
   totalPages: Int
   pageable: PageableObject
+  numberOfElements: Int
   size: Int
   content: [MessageDto]
   number: Int
   sort: SortObject
-  numberOfElements: Int
   first: Boolean
   last: Boolean
   empty: Boolean
 }
 
 type PageableObject @join__type(graph: REST_API)  {
-  paged: Boolean
-  pageNumber: Int
+  unpaged: Boolean
   pageSize: Int
+  pageNumber: Int
+  paged: Boolean
   offset: BigInt
   sort: SortObject
-  unpaged: Boolean
 }
 
 type SortObject @join__type(graph: REST_API)  {
+  unsorted: Boolean
   sorted: Boolean
   empty: Boolean
-  unsorted: Boolean
 }
 
 type MessageDto @join__type(graph: REST_API)  {

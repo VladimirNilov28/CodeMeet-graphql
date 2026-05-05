@@ -1,4 +1,4 @@
-import { defineConfig } from '@graphql-mesh/compose-cli'
+import {createRenameTransform, defineConfig} from '@graphql-mesh/compose-cli'
 import { loadOpenAPISubgraph } from '@omnigraph/openapi'
 import dotenv from 'dotenv'
 
@@ -16,7 +16,25 @@ export const composeConfig = defineConfig({
           'X-Api-Key': process.env.API_KEY ?? '',
           'Authorization': '{context.headers.authorization}'
         }
-      })
+      }),
+      transforms: [
+        createRenameTransform({
+          fieldRenamer({ typeName, fieldName }) {
+            if (typeName !== 'Query') return ''
+            const map: Record<string, string> = {
+              getCurrentUser: 'me',
+              getMyProfile: 'myProfile',
+              getMyBio: 'myBio',
+              getUserById: 'user',
+              getUserProfileById: 'profile',
+              getUserBioById: 'bio',
+              getRecommendations: 'recommendations',
+              getConnections: 'connections'
+            }
+            return map[fieldName] ?? ''
+          }
+        })
+      ]
     }
   ]
 })
