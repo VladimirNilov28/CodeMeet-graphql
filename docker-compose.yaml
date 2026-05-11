@@ -42,5 +42,21 @@ services:
     ports:
       - 7777:8080
 
+  hive-router:
+    image: "ghcr.io/graphql-hive/router:latest"
+    ports:
+      - "4000:4000"
+    volumes:
+    - ./graphql/router.config.yaml:/app/router.config.yaml
+    - ./graphql/supergraph.graphql:/app/supergraph.graphql
+    restart: unless-stopped
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   db_data:

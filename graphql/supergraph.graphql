@@ -151,7 +151,7 @@ scalar ObjMap @join__type(graph: REST_API)
 scalar _DirectiveExtensions @join__type(graph: REST_API) 
 
 type Query @extraSchemaDefinitionDirective(
-  directives: {transport: [{subgraph: "REST_API", kind: "rest", location: "http://localhost:8080", headers: [["X-Api-Key", "123456"], ["Authorization", "{context.headers.authorization}"]]}]}
+  directives: {transport: [{subgraph: "REST_API", kind: "rest", location: "http://localhost:8080", headers: [["X-Api-Key", "1234"], ["Authorization", "{context.headers.authorization}"]]}]}
 ) @join__type(graph: REST_API)  {
   myProfile: ProfileDto @httpOperation(
     subgraph: "REST_API"
@@ -332,16 +332,16 @@ type PageMessageDto @join__type(graph: REST_API)  {
 
 type PageableObject @join__type(graph: REST_API)  {
   unpaged: Boolean
-  pageSize: Int
   pageNumber: Int
   paged: Boolean
+  pageSize: Int
   offset: BigInt
   sort: SortObject
 }
 
 type SortObject @join__type(graph: REST_API)  {
-  unsorted: Boolean
   sorted: Boolean
+  unsorted: Boolean
   empty: Boolean
 }
 

@@ -1,0 +1,7 @@
+supergraph:
+  source: file
+  path: /app/supergraph.graphql
+
+override_subgraph_urls:
+  REST_API:
+    url: "http://app:8080"
