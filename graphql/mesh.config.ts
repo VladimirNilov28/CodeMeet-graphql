@@ -1,6 +1,6 @@
 import {createRenameTransform, defineConfig} from '@graphql-mesh/compose-cli'
 import { loadOpenAPISubgraph } from '@omnigraph/openapi'
-import dotenv from 'dotenv'
+import * as dotenv from 'dotenv'
 
 dotenv.config({ path: '../.env' })
 

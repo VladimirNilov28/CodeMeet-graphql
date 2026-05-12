@@ -5,3 +5,6 @@ supergraph:
 override_subgraph_urls:
   REST_API:
     url: "http://app:8080"
+
+laboratory:
+  enabled: ${LABORATORY_ENABLED}

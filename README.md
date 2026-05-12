@@ -1,4 +1,4 @@
-d# CodeMeet
+# CodeMeet
 
 > A full-stack platform that connects developers, programmers, and hobbyists based on their programming languages, interests, and personal characteristics.
 
@@ -10,7 +10,7 @@ CodeMeet is a social network built for coders. Create a profile, describe your t
 
 ## GraphQL API
 
-This project exposes a GraphQL API alongside the REST API. The canonical GraphQL documentation and quick-start (queries, subscriptions, playground info) is in `web/README_GRAPHQL.md` — see that file for GraphQL-specific usage and examples.
+This project exposes a GraphQL API alongside the REST API. The canonical GraphQL documentation and quick-start (queries, subscriptions, playground info) is in `README_GRAPHQL.md` — see that file for GraphQL review.
 
 **Key capabilities:**
 - Secure JWT + bcrypt authentication
@@ -165,20 +165,38 @@ docker compose version
 > For other distros (Fedora, RHEL, Debian, etc.) follow the official guide: [docs.docker.com/engine/install](https://docs.docker.com/engine/install/).
 
 ---
+#### Configure environment variables
+
+`.env` files are **important** — the project has sensible defaults but without configured `API_KEY`, the supergraph won't compose and hive-router will crash.
+Also, developer mode listens localhosts instead docker hosts, by this reason you have to configure `DATASOURCE_URL`
+
+In developer mode, services run outside Docker and connect via localhost.
+Therefore, you must configure: `DATASOURCE_URL=jdbc:postgresql://database:5432/codemeet_db`
+
+Create `.env` in the project root by copying `.env.dev.example` or `.env.prod.example`:
+
+Optionally, create `frontend/.env` if you want to override the API URLs:
+```env
+VITE_API_BASE_URL=http://localhost:8080/api
+VITE_WS_BASE_URL=http://localhost:8080
+```
 
 ### Step 1 — Run CodeMeet
 
-All you need is **Docker** (installed above).
+All you need is **Docker** (installed above) and `make`.
+> Note: On Windows, install `make` via WSL or Git Bash.
+> On macOS/Linux, it is usually preinstalled.
 
 ```bash
 # From the project root (./web)
-docker compose up -d
+make prod
 ```
 
 > Docker Compose is included in Docker Desktop and in Docker Engine v2+. No separate install needed.
 
 That single command will:
-1. Build the frontend (Node 20-Alpine) — install deps and run `npm run build`.
+1. Generate `supergraph.graphql`
+2. Build the frontend (Node 20-Alpine) — install deps and run `npm run build`.
 2. Build the backend (Maven 3.9 + Temurin 21) — compile, copy the frontend into Spring's `static/` resources, and package the fat JAR.
 3. Produce a minimal runtime image (Temurin 21 JRE-Alpine).
 4. Start PostgreSQL 16 + PostGIS with a health-check, creating the database automatically.
@@ -192,75 +210,62 @@ If you prefer to run services individually:
 - **Java JDK 21** — [Eclipse Temurin](https://adoptium.net/temurin/releases/?version=21) or `sudo apt install openjdk-21-jdk`
 - **Node.js 18+** — [nodejs.org](https://nodejs.org/) or via NVM
 - **PostgreSQL + PostGIS** — [postgresql.org](https://www.postgresql.org/download/) or `sudo apt install postgresql postgresql-contrib postgis`
+- **tmux** - will be installed while building project
+- **Python3** - Can be installed from official site
 
-#### 1. Configure environment variables
 
-Both `.env` files are **optional** — the project has sensible defaults built in. The one exception is dev mode, where the backend needs to reach the database on `localhost` instead of the Docker network.
-
-Create `./web/.env` with just this one line:
-```env
-DATASOURCE_URL=jdbc:postgresql://localhost:5432/codemeet_db
-```
-
-Optionally, create `frontend/.env` if you want to override the API URLs:
-```env
-VITE_API_BASE_URL=http://localhost:8080/api
-VITE_WS_BASE_URL=http://localhost:8080
-```
-
-#### 2. Start the database
+#### 1. Start the database
 
 ```bash
-# From the project root (./web)
-docker compose up database -d
+make database
 ```
 
-#### 3. Start the backend
+#### 2. Start the backend
 
 ```bash
-cd backend
-./mvnw clean install          # compile & run tests
-./mvnw spring-boot:run        # http://localhost:8080
+make backend
 ```
 
-#### 4. Start the frontend
+#### 3. Start graphql server + playground (manual/dev boot only)
 
 ```bash
-cd frontend
-npm install
-npm run dev                   # http://localhost:5173
+make hive-router
 ```
+
+#### 3. Start the frontend
+
+```bash
+make client
+```
+
+#### ALL IN ONE
+Just run `make dev`, it will boot every previous steps
 
 > In production (Docker), the frontend is served by Spring Boot — only one URL needed.
 
+### Developer Mode (GraphQL Playground)
+
+The GraphQL playground (Laboratory) is disabled by default in production.
+
+
+
 ### Useful Commands
-
-#### Docker Compose
-
-```bash
-# Stream logs
-docker compose logs -f app
-
-# Stop, keep data
-docker compose down
-
-# Stop and wipe database volume (fresh start)
-docker compose down -v
-
-# Rebuild only the app after code changes
-docker compose up --build app
-```
 
 #### Database & Seed Scripts
 
-Run from the `frontend/` directory with `npm run <script>`.
-
-**Docker mode** (app must be running via `docker compose up`):
-
 ```bash
-npm run docker:init-seed   # seed the database with 100 test users
-npm run docker:init-admin  # create an admin account
-npm run docker:drop-db     # wipe the database
+make seed-db     # seed the database with 100 test users
+make init-admin  # create an admin account
+make drop-db     # wipe the database
+
+make prod-dwon   # stop production eviroment
+make containers-down # stop containers and tmux sessions
+
+make attach-backend # inspect tmux backend terminal
+make attach-client  # inspect tmux client terminal
+
+make bootstap-supergraph # build GraphQL supergraph...
+
 ```
 
 **Dev mode:**
@@ -283,7 +288,7 @@ Both Docker and local setups use the same defaults — `codemeet_db` / `postgres
 4. Browse recommendations on **Matches** — connect or dismiss.
 5. Manage incoming and outgoing requests on **Connections**.
 6. Chat in real time with connected users (text + file attachments).
-7. Customise your experience in **Settings** (theme, font, background, privacy).
+7. Customize your experience in **Settings** (theme, font, background, privacy).
 
 ---
 

@@ -320,29 +320,29 @@ type PageMessageDto @join__type(graph: REST_API)  {
   totalElements: BigInt
   totalPages: Int
   pageable: PageableObject
-  numberOfElements: Int
   size: Int
   content: [MessageDto]
   number: Int
   sort: SortObject
+  numberOfElements: Int
   first: Boolean
   last: Boolean
   empty: Boolean
 }
 
 type PageableObject @join__type(graph: REST_API)  {
-  unpaged: Boolean
-  pageNumber: Int
   paged: Boolean
+  pageNumber: Int
   pageSize: Int
   offset: BigInt
   sort: SortObject
+  unpaged: Boolean
 }
 
 type SortObject @join__type(graph: REST_API)  {
   sorted: Boolean
-  unsorted: Boolean
   empty: Boolean
+  unsorted: Boolean
 }
 
 type MessageDto @join__type(graph: REST_API)  {

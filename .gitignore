@@ -4,3 +4,5 @@ task.md
 .vscode/
 debug_seed.sql
 .env
+logs/
+.pids/

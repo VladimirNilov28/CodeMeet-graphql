@@ -40,7 +40,7 @@ services:
     container_name: adminer
     restart: always
     ports:
-      - 7777:8080
+      - "7777:8080"
 
   hive-router:
     image: "ghcr.io/graphql-hive/router:latest"
@@ -52,11 +52,7 @@ services:
     restart: unless-stopped
     depends_on:
       - app
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+    environment:
+      LABORATORY_ENABLED: ${LABORATORY_ENABLED:-false}
 volumes:
   db_data:
