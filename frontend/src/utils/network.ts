@@ -9,7 +9,7 @@ const getWindowOrigin = () => {
 };
 
 export const getApiBaseUrl = () => {
-  const configured = import.meta.env.VITE_API_BASE_URL;
+  const configured = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api";
   if (configured && configured.trim().length > 0) {
     return trimTrailingSlash(configured);
   }
@@ -22,7 +22,7 @@ export const getBackendBaseUrl = () => {
 };
 
 export const getWebSocketBaseUrl = () => {
-  const configured = import.meta.env.VITE_WS_BASE_URL;
+  const configured = import.meta.env.VITE_WS_BASE_URL ?? "http://localhost:8080";
   if (configured && configured.trim().length > 0) {
     return trimTrailingSlash(configured);
   }

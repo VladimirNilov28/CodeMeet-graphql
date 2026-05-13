@@ -324,9 +324,9 @@ type PageMessageDto @join__type(graph: REST_API)  {
   content: [MessageDto]
   number: Int
   sort: SortObject
-  numberOfElements: Int
   first: Boolean
   last: Boolean
+  numberOfElements: Int
   empty: Boolean
 }
 

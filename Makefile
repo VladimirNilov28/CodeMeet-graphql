@@ -2,7 +2,7 @@
 # Utils
 # =========================
 
-.PHONY: _check-python _check-tmux backend client database hive-router containers-down dev attach-backend attach-client
+.PHONY: _check-supergraph _check-python _check-tmux bootstrap-supergraph backend client database hive-router containers-down dev attach-backend attach-client drop-db init-admin seed-db
 
 GREEN=\033[0;32m
 BLUE=\033[0;34m
@@ -70,10 +70,7 @@ client: _check-tmux
 	@printf "$(GREEN) ✔ Frontend available at:$(NC) $(CYAN)http://localhost:5173$(NC)\n"
 	@printf "$(BLUE)👉 Inspect:$(NC) tmux attach -t frontend\n"
 
-hive-router:
-	@printf "$(YELLOW)✨ Building GraphQL supergraph...$(NC)\n"
-	@cd graphql && npm run compose
-
+hive-router: _check-supergraph
 	@printf "$(YELLOW)🚀 Starting Hive Router...$(NC)\n"
 	@LABORATORY_ENABLED=true docker compose up hive-router -d --no-deps
 
@@ -134,16 +131,24 @@ _check-supergraph:
 
 bootstrap-supergraph: _check-tmux
 	@printf "$(YELLOW)✨ Building GraphQL supergraph...$(NC)\n"
-	@docker compose up database -d >/dev/null
-	@tmux new-session -d -s backend \
-    	"cd backend && DATASOURCE_URL=jdbc:postgresql://localhost:5432/codemeet_db ./mvnw spring-boot:run"
 
-	@printf "$(YELLOW)⏳ Generating...$(NC)\n"
+	@docker compose ps database | grep -q "running" || \
+		docker compose up database -d >/dev/null
+
+	@lsof -i :8080 >/dev/null 2>&1 || \
+		tmux new-session -d -s backend \
+		"cd backend && DATASOURCE_URL=jdbc:postgresql://localhost:5432/codemeet_db ./mvnw spring-boot:run"
+
+	@printf "$(YELLOW)⏳ Waiting for backend...$(NC)\n"
 
 	@until curl -s http://localhost:8080/actuator/health >/dev/null; do \
 		sleep 2; \
 	done
+
+	@printf "$(YELLOW)⚙ Generating supergraph...$(NC)\n"
+
 	@cd graphql && npm run compose
+
 	@tmux kill-session -t backend 2>/dev/null || true
 	@docker compose down >/dev/null 2>&1 || true
 
