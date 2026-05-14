@@ -5,22 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ebd9cf57-ebf5-43b0-b4ff-e3e2c9b51933" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker-compose.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/controller/ChatController.java" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/java/com/codemeet/backend/controller/ChatController.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/graphql/mesh.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/graphql/mesh.config.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/graphql/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/graphql/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/graphql/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/graphql/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/graphql/router.config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/graphql/router.config.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/graphql/supergraph.graphql" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/graphql/tsconfig.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/plan.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/drop-db.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/drop-db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/init-admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/init-admin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/seed-db.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/seed-db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/task.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/graphql/playground.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/graphql/tsconfig.json" beforeDir="false" afterPath="$PROJECT_DIR$/graphql/tsconfig.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -51,28 +40,28 @@
     <option name="sortByType" value="true" />
     <option name="sortKey" value="BY_TYPE" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Makefile Target._check-tmux.executor": "Run",
-    "Makefile Target.containers-down.executor": "Run",
-    "Makefile Target.dev-build.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "git-widget-placeholder": "feature/docker-commands",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "/home/netrunner/graphql",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "project.structure.last.edited": "Modules",
-    "project.structure.proportion": "0.15",
-    "project.structure.side.proportion": "0.2",
-    "ts.external.directory.path": "/home/netrunner/graphql/frontend/node_modules/typescript/lib",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Makefile Target._check-tmux.executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.containers-down.executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.dev-build.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;feature/docker-commands&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/netrunner/graphql&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Modules&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.15&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;/home/netrunner/graphql/frontend/node_modules/typescript/lib&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RdControllerToolWindowsLayoutState" isNewUi="true">
     <layout>
       <window_info id="Bookmarks" side_tool="true" />
@@ -82,7 +71,7 @@
       <window_info id="Commit_Guest" show_stripe_button="false" />
       <window_info id="Pull Requests" />
       <window_info id="Learn" show_stripe_button="false" />
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.23776042" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.17421874" />
       <window_info id="Commit" order="1" weight="0.25" />
       <window_info id="Structure" order="2" side_tool="true" weight="0.25" />
       <window_info anchor="bottom" id="Database Changes" />
@@ -95,7 +84,7 @@
       <window_info anchor="bottom" id="Version Control" order="1" />
       <window_info anchor="bottom" id="Problems" order="2" />
       <window_info anchor="bottom" id="Problems View" order="3" />
-      <window_info active="true" anchor="bottom" id="Terminal" order="4" visible="true" weight="0.34156978" />
+      <window_info active="true" anchor="bottom" id="Terminal" order="4" visible="true" weight="0.0625" />
       <window_info anchor="bottom" id="Services" order="5" />
       <window_info anchor="bottom" id="Run" order="6" weight="0.34156978" />
       <window_info anchor="bottom" id="GraphQL" order="7" weight="0.34156978" />
@@ -205,6 +194,7 @@
       <workItem from="1777672119106" duration="5683000" />
       <workItem from="1777677828272" duration="2367000" />
       <workItem from="1777807199640" duration="11068000" />
+      <workItem from="1778793025741" duration="3951000" />
     </task>
     <servers />
   </component>

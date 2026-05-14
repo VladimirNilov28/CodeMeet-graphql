@@ -17,6 +17,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
@@ -25,6 +26,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.security.Principal;
@@ -32,6 +34,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @RestController
@@ -96,6 +99,21 @@ public class ChatController {
         messagingTemplate.convertAndSendToUser(
             sender.getId().toString(), "/queue/messages", mapped
         );
+
+        /* Streams, SSE connection usage */
+
+        // Keeps the recipient's SSE connection.
+        SseEmitter recipientEmitter = sseEmitters.get(recipient.getId().toString());
+
+        if (recipientEmitter != null) {
+            try {
+                // Push message to SSE stream
+                recipientEmitter.send(mapped);
+            } catch (IOException e) {
+                // If connection fails, removes from map
+                sseEmitters.remove(recipient.getId().toString());
+            }
+        }
     }
 
     @MessageMapping("/chat/typing")
@@ -329,4 +347,32 @@ public class ChatController {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sender not found"));
         }
     }
+
+    /* Streams, SSE connection endpoint */
+
+    // Active SSE connections container ( key -> user id, value -> user SSE connection )
+    private final Map<String, SseEmitter> sseEmitters = new ConcurrentHashMap<>();
+
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamMessages(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+
+        // Makes emitter without timeout to let live connection until user disconnection
+        SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
+
+        // Saves emitter to our container to find it in future by user id
+        sseEmitters.put(user.getId().toString(), emitter);
+
+        // Cleans users from SSE container to avoid memory leaks at disconnection
+        emitter.onCompletion(() -> sseEmitters.remove(user.getId().toString()));
+        emitter.onTimeout(() -> sseEmitters.remove(user.getId().toString()));
+
+        return emitter;
+    }
+
+
+
 }
+
+
+// REMOVE STOPM (Streams, SSE)
