@@ -117,7 +117,7 @@
       <recent name="$PROJECT_DIR$" />
     </key>
   </component>
-  <component name="RunManager" selected="Makefile Target._check-tmux">
+  <component name="RunManager" selected="Spring Boot.BackendApplication">
     <configuration default="true" type="docker-deploy" factoryName="docker-compose.yml" temporary="true">
       <deployment type="docker-compose.yml">
         <settings />
@@ -162,13 +162,6 @@
       </deployment>
       <method v="2" />
     </configuration>
-    <recent_temporary>
-      <list>
-        <item itemvalue="Makefile Target._check-tmux" />
-        <item itemvalue="Makefile Target.containers-down" />
-        <item itemvalue="Makefile Target.dev-build" />
-      </list>
-    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
