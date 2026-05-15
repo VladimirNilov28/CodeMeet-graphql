@@ -38,3 +38,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registration.interceptors(webSocketAuthChannelInterceptor);
     }
 }
+
+// TODO create WebhookForwarder (calls Mesh webhook)
+
+// TODO call WebhookForwarder when STOMP event happens

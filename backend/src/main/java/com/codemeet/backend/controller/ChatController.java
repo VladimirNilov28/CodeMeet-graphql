@@ -99,21 +99,6 @@ public class ChatController {
         messagingTemplate.convertAndSendToUser(
             sender.getId().toString(), "/queue/messages", mapped
         );
-
-        /* Streams, SSE connection usage */
-
-        // Keeps the recipient's SSE connection.
-        SseEmitter recipientEmitter = sseEmitters.get(recipient.getId().toString());
-
-        if (recipientEmitter != null) {
-            try {
-                // Push message to SSE stream
-                recipientEmitter.send(mapped);
-            } catch (IOException e) {
-                // If connection fails, removes from map
-                sseEmitters.remove(recipient.getId().toString());
-            }
-        }
     }
 
     @MessageMapping("/chat/typing")
@@ -346,28 +331,6 @@ public class ChatController {
             return userRepository.findByEmail(principalName)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sender not found"));
         }
-    }
-
-    /* Streams, SSE connection endpoint */
-
-    // Active SSE connections container ( key -> user id, value -> user SSE connection )
-    private final Map<String, SseEmitter> sseEmitters = new ConcurrentHashMap<>();
-
-    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamMessages(Authentication authentication) {
-        User user = getCurrentUser(authentication);
-
-        // Makes emitter without timeout to let live connection until user disconnection
-        SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
-
-        // Saves emitter to our container to find it in future by user id
-        sseEmitters.put(user.getId().toString(), emitter);
-
-        // Cleans users from SSE container to avoid memory leaks at disconnection
-        emitter.onCompletion(() -> sseEmitters.remove(user.getId().toString()));
-        emitter.onTimeout(() -> sseEmitters.remove(user.getId().toString()));
-
-        return emitter;
     }
 
 

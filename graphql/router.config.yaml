@@ -9,5 +9,5 @@ override_subgraph_urls:
 laboratory:
   enabled: ${LABORATORY_ENABLED}
 
-# TODO configure existing websocket connection 
+# TODO configure existing websocket connection
 # https://the-guild.dev/graphql/hive/docs/router/subscriptions/websockets

@@ -29,3 +29,7 @@ export const getWebSocketBaseUrl = () => {
 
   return getBackendBaseUrl().replace(/^http/i, 'ws');
 };
+
+// TODO replace STOMP client with graphql-ws (createClient)
+
+// TODO rewrite subscriptions to GraphQL subscription queries
